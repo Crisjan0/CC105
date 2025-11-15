@@ -75,7 +75,7 @@ if (isset($_SESSION)) {
     </section>
 
     <section aria-label="Primary actions">
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <a href="enroll.php" class="group block rounded-lg bg-white p-6 shadow hover:shadow-md transition">
           <div class="flex items-start justify-between">
             <div>
@@ -87,21 +87,6 @@ if (isset($_SESSION)) {
               <svg class="h-10 w-10 text-brand" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5z"></path>
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l6.16-3.422A12.083 12.083 0 0118 20.5H6a12.083 12.083 0 00-.16-9.922L12 14z"></path>
-              </svg>
-            </div>
-          </div>
-        </a>
-
-        <a href="course_selection.php" class="group block rounded-lg bg-white p-6 shadow hover:shadow-md transition">
-          <div class="flex items-start justify-between">
-            <div>
-              <h3 class="text-lg font-medium text-gray-900">Select Courses</h3>
-              <p class="mt-2 text-sm text-gray-500">Browse available courses and build your schedule.</p>
-            </div>
-            <div class="ml-4 flex-shrink-0">
-              <svg class="h-10 w-10 text-blue-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 20l9-5-9-5-9 5 9 5z"></path>
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 12l6.16-3.422A12.083 12.083 0 0118 18.5H6a12.083 12.083 0 00-.16-9.922L12 12z"></path>
               </svg>
             </div>
           </div>
@@ -139,18 +124,68 @@ if (isset($_SESSION)) {
       </div>
     </section>
 
-    <section class="mt-8">
+    <!-- New: Enrollment Application Submission Requirements -->
+    <section aria-label="Enrollment application requirements" class="mt-8">
       <div class="rounded-lg bg-white p-6 shadow">
-        <h3 class="text-lg font-medium mb-2">Quick Links</h3>
-        <div class="flex flex-wrap gap-3">
-          <a href="enroll.php" class="px-3 py-2 bg-brand text-white rounded hover:bg-brand-light text-sm">New Enrollment</a>
-          <a href="course_selection.php" class="px-3 py-2 bg-blue-100 text-blue-800 rounded text-sm">Course Selection</a>
-          <a href="payment.php" class="px-3 py-2 bg-yellow-100 text-yellow-800 rounded text-sm">Pay Fees</a>
-          <a href="transcripts.php" class="px-3 py-2 bg-gray-100 text-gray-800 rounded text-sm">Transcripts</a>
-          <a href="contact_support.php" class="px-3 py-2 bg-green-100 text-green-800 rounded text-sm">Contact Support</a>
+        <div class="flex items-start justify-between">
+          <div>
+            <h3 class="text-lg font-medium mb-2">Enrollment Application — Requirements & Steps</h3>
+            <p class="text-sm text-gray-500 mb-4">Before you submit an enrollment application, please ensure you meet the eligibility criteria and prepare the required documents listed below.</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="bg-gray-50 p-4 rounded">
+                <h4 class="text-sm font-semibold text-gray-800 mb-2">Eligibility</h4>
+                <ul class="list-disc list-inside text-sm text-gray-600 space-y-1">
+                  <li>Be a registered user of this portal</li>
+                  <li>Meet program-specific entry requirements (check course catalog)</li>
+                  <li>Fees must be paid or a payment plan arranged</li>
+                </ul>
+              </div>
+
+              <div class="bg-gray-50 p-4 rounded">
+                <h4 class="text-sm font-semibold text-gray-800 mb-2">Required Documents</h4>
+                <ul class="list-disc list-inside text-sm text-gray-600 space-y-1">
+                  <li>Original SHS Report Card/Form 138</li>
+                  <li>Original Certificate of Good Moral Character</li>
+                  <li>Original PSA Birth Certificate </li>
+                  <li>Proof of payment or payment receipt (PDF/JPG)</li>
+                </ul>
+              </div>
+
+              <div class="bg-gray-50 p-4 rounded">
+                <h4 class="text-sm font-semibold text-gray-800 mb-2">File requirements</h4>
+                <p class="text-sm text-gray-600">PDF preferred for documents, each file ≤ 5 MB. Use clear scans/photos; filenames should include your username.</p>
+              </div>
+
+              <div class="bg-gray-50 p-4 rounded">
+                <h4 class="text-sm font-semibold text-gray-800 mb-2">Deadlines & Notes</h4>
+                <ul class="list-disc list-inside text-sm text-gray-600 space-y-1">
+                  <li>Regular intake deadline: see course selection for term-specific dates</li>
+                  <li>Late submissions may be considered with approval</li>
+                  <li>Incomplete applications will not be processed</li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="mt-4 flex flex-wrap gap-3 items-center">
+              <a href="enroll.php" class="inline-flex items-center px-4 py-2 bg-brand text-white rounded hover:bg-brand-light text-sm">Start Application</a>
+              
+            </div>
+
+            <p class="mt-3 text-xs text-gray-400">Tip: Gather your documents first, then start the application — you'll be able to upload files during the process.</p>
+          </div>
+
+          <div class="hidden md:block md:ml-6">
+            <!-- simple illustrative icon -->
+            <svg class="h-24 w-24 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 12A9 9 0 1112 3v0"></path>
+            </svg>
+          </div>
         </div>
       </div>
     </section>
+ 
   </main>
 
   <footer class="bg-white border-t">

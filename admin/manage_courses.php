@@ -148,6 +148,11 @@ if (isset($_GET['edit_id'])) {
 
     <!-- Tailwind CDN for quick prototyping; use a compiled build in production -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+    body::-webkit-scrollbar{
+      display:none;
+    }
+  </style>
 </head>
 <body class="min-h-screen bg-gray-50 text-gray-800">
   <nav class="bg-white border-b">
@@ -159,6 +164,7 @@ if (isset($_GET['edit_id'])) {
           <a href="manage_courses.php" class="text-sm text-brand-600 font-medium">Courses</a>
           <a href="manage_students.php" class="text-sm text-gray-600 hover:text-gray-900">Students</a>
           <a href="manage_payments.php" class="text-sm text-gray-600 hover:text-gray-900">Payments</a>
+          <a href="manage_applications.php" class="text-sm text-gray-600 hover:text-gray-900">Application</a>
         </div>
         <div class="flex items-center space-x-3">
           <a href="../public/logout.php" class="inline-flex items-center px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700">Logout</a>

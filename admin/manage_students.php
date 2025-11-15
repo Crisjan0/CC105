@@ -242,6 +242,11 @@ if (isset($_GET['edit_id'])) {
         setTimeout(()=> btn.innerHTML = orig, 1200);
       }
     </script>
+    <style>
+    body::-webkit-scrollbar{
+      display:none;
+    }
+  </style>
 </head>
 <body class="min-h-screen bg-gray-50 text-gray-800">
   <nav class="bg-white border-b">

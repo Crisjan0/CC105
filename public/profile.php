@@ -170,6 +170,11 @@ try {
 
   <!-- Tailwind CDN for quick prototyping. Replace with compiled CSS in production. -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body::-webkit-scrollbar{
+      display:none;
+    }
+  </style>
 </head>
 <body class="min-h-screen bg-gray-50 text-gray-800">
   <header class="bg-white shadow">
@@ -180,8 +185,10 @@ try {
           <p class="text-sm text-gray-500">Manage your account and view recent activity.</p>
         </div>
         <div class="flex items-center space-x-3">
-          <a href="dashboard.php" class="text-sm text-gray-600 hover:underline">← Dashboard</a>
-          <a href="logout.php" class="inline-flex items-center px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700">Logout</a>
+          <a href="dashboard.php" class="text-sm text-gray-600 hover:underline font-medium">←Back to Dashboard</a>
+          <a href="logout.php"
+             class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+             aria-label="Logout">Logout</a>
         </div>
       </div>
     </div>

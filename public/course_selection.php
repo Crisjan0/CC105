@@ -169,14 +169,16 @@ try {
 <body class="min-h-screen bg-gray-50 text-gray-800">
   <header class="bg-white shadow">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex items-center justify-between h-16">
+      <div class="flex items-center justify-between py-6">
         <div>
           <h1 class="text-lg font-semibold text-gray-900">Course Enrollment</h1>
           <p class="text-sm text-gray-500">Select courses to enroll. Your current enrollments are shown on the right.</p>
         </div>
         <div class="flex items-center space-x-4">
-          <a href="dashboard.php" class="text-sm text-gray-600 hover:underline">← Dashboard</a>
-          <a href="logout.php" class="text-sm text-red-600 hover:underline">Logout</a>
+          <a href="dashboard.php" class="text-sm text-gray-600 hover:underline font-medium">←Back to Dashboard</a>
+          <a href="logout.php"
+             class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+             aria-label="Logout">Logout</a>
         </div>
       </div>
     </div>

@@ -174,7 +174,7 @@ function render_count($v) {
     </section>
 
     <section aria-label="Admin actions">
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <a href="manage_courses.php" class="group block rounded-lg bg-white p-6 shadow hover:shadow-md transition">
           <div class="flex items-start justify-between">
             <div>
@@ -216,6 +216,21 @@ function render_count($v) {
               <svg class="h-10 w-10 text-yellow-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-3.866 0-7 1.79-7 4v2a2 2 0 002 2h10a2 2 0 002-2v-2c0-2.21-3.134-4-7-4z"></path>
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 8V6m0 0a4 4 0 110 8"></path>
+              </svg>
+            </div>
+          </div>
+        </a>
+
+        <a href="manage_applications.php" class="group block rounded-lg bg-white p-6 shadow hover:shadow-md transition">
+          <div class="flex items-start justify-between">
+            <div>
+              <h3 class="text-lg font-medium text-gray-900">Manage Applications</h3>
+              <p class="mt-2 text-sm text-gray-500">Review, accept, or decline user applications.</p>
+            </div>
+            <div class="ml-4 flex-shrink-0">
+              <svg class="h-10 w-10 text-blue-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 11a4 4 0 100-8 4 4 0 000 8z"></path>
               </svg>
             </div>
           </div>
