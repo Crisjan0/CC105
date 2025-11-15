@@ -1,8 +1,8 @@
 <?php
 $host = 'localhost';
 $db   = 'school_enrollment';
-$user = 'root'; // update if needed
-$pass = '';     // update if needed
+$user = 'root'; 
+$pass = '';     
 $charset = 'utf8mb4';
 
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
