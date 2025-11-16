@@ -20,6 +20,8 @@ SET time_zone = "+00:00";
 --
 -- Database: `school_enrollment`
 --
+CREATE DATABASE IF NOT EXISTS `school_enrollment` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE `school_enrollment`;
 
 -- --------------------------------------------------------
 
