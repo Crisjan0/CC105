@@ -37,6 +37,11 @@ if (isset($_SESSION)) {
       }
     }
   </script>
+  <style>
+    body::-webkit-scrollbar{
+      display:none;
+    }
+  </style>
 </head>
 <body class="min-h-screen bg-gray-50 text-gray-800">
   <header class="bg-white shadow">

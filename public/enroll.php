@@ -237,7 +237,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $student_birthplace = clean_text($_POST['student_birthplace'] ?? '');
             $student_gender = in_array($_POST['student_gender'] ?? '', ['male','female','other'], true) ? $_POST['student_gender'] : '';
 
-            // Structured address fields
+            // Structured address fields (added inputs in the form)
             $addr_house = clean_text($_POST['student_addr_house'] ?? '');
             $addr_street = clean_text($_POST['student_addr_street'] ?? '');
             $addr_barangay = clean_text($_POST['student_addr_barangay'] ?? '');
@@ -296,12 +296,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $error_msg = 'Please enter a valid age.';
             }
 
-            // Parent / guardian fields
+            // Parent / guardian fields (extended to include father/mother/legal guardian/contact)
             $parent_name = clean_text($_POST['parent_name'] ?? '');
             $parent_relation = clean_text($_POST['parent_relation'] ?? '');
             $parent_contact = clean_text($_POST['parent_contact'] ?? '');
             $parent_consent = isset($_POST['parent_consent']) && $_POST['parent_consent'] === '1' ? true : false;
             $parent_lives_with = isset($_POST['parent_lives_with']) && $_POST['parent_lives_with'] === '1' ? true : false;
+
+            // New explicit fields from the image
+            $father_name = clean_text($_POST['father_name'] ?? '');
+            $mother_maiden_name = clean_text($_POST['mother_maiden_name'] ?? '');
+            $legal_guardian_name = clean_text($_POST['legal_guardian_name'] ?? '');
+            $guardian_contact = clean_text($_POST['guardian_contact'] ?? '');
 
             $parent_info = [
                 'name' => $parent_name,
@@ -309,6 +315,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 'contact' => $parent_contact,
                 'consent' => $parent_consent,
                 'lives_with' => $parent_lives_with,
+                // added structured fields
+                'father_name' => $father_name ?: null,
+                'mother_maiden_name' => $mother_maiden_name ?: null,
+                'legal_guardian_name' => $legal_guardian_name ?: null,
+                'guardian_contact' => $guardian_contact ?: null,
             ];
 
             // Student info array (address as structured object) includes middle_name and birthplace
@@ -635,6 +646,11 @@ function h($v) {
         document.getElementById('indigenous_spec_div').style.display = yes ? 'block' : 'none';
       }
     </script>
+    <style>
+    body::-webkit-scrollbar{
+      display:none;
+    }
+  </style>
 </head>
 <body class="min-h-screen bg-gray-50 text-gray-800">
   <header class="bg-white shadow">
@@ -645,7 +661,7 @@ function h($v) {
           <p class="text-sm text-gray-500">Submit an application, upload documents and record payments. Provide student and parent/guardian details below.</p>
         </div>
         <div class="space-x-3">
-          <a href="dashboard.php" class="text-sm text-gray-600 hover:underline font-medium">← Dashboard</a>
+          <a href="dashboard.php" class="text-sm text-gray-600 hover:underline font-medium">←Back to Dashboard</a>
           <a href="logout.php" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700">Logout</a>
         </div>
       </div>
@@ -688,6 +704,7 @@ function h($v) {
           <p class="text-xs text-gray-500 mt-1">You may apply for only one course per application. To apply for additional courses submit separate applications.</p>
         </div>
 
+        <!-- Student name / basic info grid -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
             <label class="block text-sm font-medium text-gray-700">First Name</label>
@@ -742,19 +759,76 @@ function h($v) {
             <label class="block text-sm font-medium text-gray-700">Email Address</label>
             <input type="email" name="student_email" value="<?= h($_POST['student_email'] ?? $current_user['email']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="name@example.com"  />
           </div>
+        </div>
 
-          <!-- Indigenous Peoples question -->
-          <div class="md:col-span-2">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Belonging to any Indigenous Peoples (IP) Community / Indigenous Cultural Community?</label>
-            <div class="flex items-center space-x-4">
-              <label class="inline-flex items-center"><input type="radio" name="indigenous_belongs" value="yes" onclick="toggleIndigenousSpecify()" <?= (($_POST['indigenous_belongs'] ?? '') === 'yes') ? 'checked' : '' ?> /> <span class="ml-2 text-sm">Yes</span></label>
-              <label class="inline-flex items-center"><input type="radio" name="indigenous_belongs" value="no" onclick="toggleIndigenousSpecify()" <?= (($_POST['indigenous_belongs'] ?? '') === 'no') ? 'checked' : '' ?> /> <span class="ml-2 text-sm">No</span></label>
-              <div id="indigenous_spec_div" class="ml-4" style="display:<?= (($_POST['indigenous_belongs'] ?? '') === 'yes') ? 'block' : 'none' ?>;">
-                <input type="text" name="indigenous_spec" value="<?= h($_POST['indigenous_spec'] ?? '') ?>" placeholder="If Yes, please specify" class="block w-80 rounded border-gray-300 px-3 py-2 text-sm" />
-              </div>
+        <!-- Current Address fields (added to match image) -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Student Address</label>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input type="text" name="student_addr_house" value="<?= h($_POST['student_addr_house'] ?? '') ?>" placeholder="House No." class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+            <input type="text" name="student_addr_street" value="<?= h($_POST['student_addr_street'] ?? '') ?>" placeholder="Sitio / Street" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+            <input type="text" name="student_addr_barangay" value="<?= h($_POST['student_addr_barangay'] ?? '') ?>" placeholder="Barangay" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+            <input type="text" name="student_addr_city" value="<?= h($_POST['student_addr_city'] ?? '') ?>" placeholder="Municipality / City" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+            <input type="text" name="student_addr_province" value="<?= h($_POST['student_addr_province'] ?? '') ?>" placeholder="Province" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+            <input type="text" name="student_addr_country" value="<?= h($_POST['student_addr_country'] ?? '') ?>" placeholder="Country" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+            <input type="text" name="student_addr_zip" value="<?= h($_POST['student_addr_zip'] ?? '') ?>" placeholder="ZIP / Postal Code" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+          </div>
+          <p class="text-xs text-gray-500 mt-1">Fill out your current address. Use the fields provided above (House No., Sitio/Street, Barangay, Municipality/City, Province).</p>
+        </div>
+
+        <!-- Indigenous Peoples question -->
+        <div class="md:col-span-2 mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Belonging to any Indigenous Peoples (IP) Community / Indigenous Cultural Community?</label>
+          <div class="flex items-center space-x-4">
+            <label class="inline-flex items-center"><input type="radio" name="indigenous_belongs" value="yes" onclick="toggleIndigenousSpecify()" <?= (($_POST['indigenous_belongs'] ?? '') === 'yes') ? 'checked' : '' ?> /> <span class="ml-2 text-sm">Yes</span></label>
+            <label class="inline-flex items-center"><input type="radio" name="indigenous_belongs" value="no" onclick="toggleIndigenousSpecify()" <?= (($_POST['indigenous_belongs'] ?? '') === 'no') ? 'checked' : '' ?> /> <span class="ml-2 text-sm">No</span></label>
+            <div id="indigenous_spec_div" class="ml-4" style="display:<?= (($_POST['indigenous_belongs'] ?? '') === 'yes') ? 'block' : 'none' ?>;">
+              <input type="text" name="indigenous_spec" value="<?= h($_POST['indigenous_spec'] ?? '') ?>" placeholder="If Yes, please specify" class="block w-80 rounded border-gray-300 px-3 py-2 text-sm" />
             </div>
           </div>
+        </div>
 
+        <hr class="my-4" />
+
+        <!-- Parent / Guardian details (added to match image) -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">Parent / Guardian Details</label>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Father's Name</label>
+              <input type="text" name="father_name" value="<?= h($_POST['father_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Father's Full Name (Last, Given, Middle)" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Mother's Maiden Name</label>
+              <input type="text" name="mother_maiden_name" value="<?= h($_POST['mother_maiden_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Mother's Maiden Name (Last, Given, Middle)" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Legal Guardian's Name</label>
+              <input type="text" name="legal_guardian_name" value="<?= h($_POST['legal_guardian_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Legal Guardian (if applicable)" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Contact Number</label>
+              <input type="text" name="guardian_contact" value="<?= h($_POST['guardian_contact'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Contact Number for Parent/Guardian" />
+            </div>
+
+            <!-- existing generic parent fields (kept for backward compatibility) -->
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Primary Parent / Guardian Name</label>
+              <input type="text" name="parent_name" value="<?= h($_POST['parent_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Name (Primary Contact)" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Relation to Student</label>
+              <input type="text" name="parent_relation" value="<?= h($_POST['parent_relation'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="e.g. Mother, Father, Guardian" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Primary Parent Contact</label>
+              <input type="text" name="parent_contact" value="<?= h($_POST['parent_contact'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="(000) 000-0000" />
+            </div>
+            <div class="flex items-center space-x-3">
+              <label class="inline-flex items-center"><input type="checkbox" name="parent_consent" value="1" <?= (isset($_POST['parent_consent']) ? 'checked' : '') ?> /> <span class="ml-2 text-sm">Consent given</span></label>
+              <label class="inline-flex items-center"><input type="checkbox" name="parent_lives_with" value="1" <?= (isset($_POST['parent_lives_with']) ? 'checked' : '') ?> /> <span class="ml-2 text-sm">Lives with student</span></label>
+            </div>
+          </div>
         </div>
 
         <hr class="my-4" />
@@ -772,7 +846,7 @@ function h($v) {
               class="block w-full text-gray-700 placeholder-gray-400 border-0 focus:outline-none focus:ring-0 text-sm"
               aria-label="Amount"
             />
-            <p class="mt-2 text-xs text-gray-400">Enter the amount you paid. Admin will verify and mark completed.</p>
+            <p class="mt-2 text-xs text-gray-400">Enter the amount for down payment ₱1000. Admin will verify and mark completed.</p>
           </div>
         </div>
 
@@ -892,9 +966,20 @@ function h($v) {
                   <div class="mt-2">
                     <strong>Parent / Guardian:</strong>
                     <div class="text-sm text-gray-700">
-                      <?= !empty($parent_info['name']) ? h($parent_info['name']) : '<span class="text-gray-500">—</span>' ?>
-                      <?php if (!empty($parent_info['relation'])): ?> (<?= h($parent_info['relation']) ?>)<?php endif; ?>
-                      <?php if (!empty($parent_info['contact'])): ?> — <?= h($parent_info['contact']) ?><?php endif; ?>
+                      <?php if (!empty($parent_info['father_name'])): ?><div><strong>Father:</strong> <?= h($parent_info['father_name']) ?></div><?php endif; ?>
+                      <?php if (!empty($parent_info['mother_maiden_name'])): ?><div><strong>Mother (maiden):</strong> <?= h($parent_info['mother_maiden_name']) ?></div><?php endif; ?>
+                      <?php if (!empty($parent_info['legal_guardian_name'])): ?><div><strong>Legal Guardian:</strong> <?= h($parent_info['legal_guardian_name']) ?></div><?php endif; ?>
+
+                      <?php if (!empty($parent_info['name'])): ?>
+                        <div class="mt-1"><?= h($parent_info['name']) ?> <?php if (!empty($parent_info['relation'])): ?>(<?= h($parent_info['relation']) ?>)<?php endif; ?></div>
+                      <?php endif; ?>
+
+                      <?php if (!empty($parent_info['guardian_contact'])): ?>
+                        <div class="text-xs text-gray-500">Contact: <?= h($parent_info['guardian_contact']) ?></div>
+                      <?php elseif (!empty($parent_info['contact'])): ?>
+                        <div class="text-xs text-gray-500">Contact: <?= h($parent_info['contact']) ?></div>
+                      <?php endif; ?>
+
                       <div class="text-xs text-gray-500 mt-1">
                         Consent: <?= (!empty($parent_info['consent']) ? 'Yes' : 'No') ?> · Lives with student: <?= (!empty($parent_info['lives_with']) ? 'Yes' : 'No') ?>
                       </div>

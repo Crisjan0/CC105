@@ -136,6 +136,11 @@ function render_count($v) {
       }
     }
   </script>
+  <style>
+    body::-webkit-scrollbar{
+      display:none;
+    }
+  </style>
 </head>
 <body class="min-h-screen bg-gray-50 text-gray-800">
   <header class="bg-white shadow">
@@ -247,7 +252,7 @@ function render_count($v) {
             <p class="mt-2 text-2xl font-semibold text-gray-900"><?php echo render_count($activeCourses); ?></p>
           </div>
           <div class="p-4 bg-gray-50 rounded">
-            <p class="text-sm text-gray-500">Enrolled Students</p>
+            <p class="text-sm text-gray-500">Students</p>
             <p class="mt-2 text-2xl font-semibold text-gray-900"><?php echo render_count($enrolledStudents); ?></p>
           </div>
           <div class="p-4 bg-gray-50 rounded">
