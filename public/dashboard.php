@@ -194,7 +194,7 @@ if (isset($_SESSION)) {
   </main>
 
   <footer class="bg-white border-t">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 text-sm text-gray-500">
+    <div class="max-w-7xl mx-auto px-4 text-center sm:px-6 lg:px-8 py-4 text-sm text-gray-500">
       © <?php echo date('Y'); ?> Your Institution. All rights reserved.
     </div>
   </footer>

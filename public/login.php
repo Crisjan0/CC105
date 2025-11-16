@@ -83,6 +83,10 @@ $info_msg = get_flash();
 
   <!-- Tailwind CDN for quick prototyping. Replace with compiled CSS in production. -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* temporary visual debugging styles */
+    img.debug { border: 2px dashed #f00; display:block; max-width:300px; height:auto; }
+  </style>
 </head>
 <body class="min-h-screen bg-gray-50 flex items-center justify-center">
   <div class="max-w-md w-full px-6">

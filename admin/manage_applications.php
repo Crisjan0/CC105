@@ -1,7 +1,7 @@
 <?php
 // public/manage_applications.php
 // Admin UI to review enrollment applications and Approve / Reject them.
-// Updated: added a Delete button in the top-right header area of the detail panel.
+// Updated: added Delete button to each application card in the list view.
 // Requires ../includes/db_connect.php and ../includes/auth.php
 // Place this file in public/ and link from your admin dashboard.
 
@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['app
                 $courseIds = json_decode($app['course_ids'] ?? '[]', true);
                 if (!is_array($courseIds)) $courseIds = [];
 
-                // Prepare once
+                // Prepare statements
                 $enrollStmt = $pdo->prepare("INSERT INTO enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, ?)");
                 $check = $pdo->prepare("SELECT id FROM enrollments WHERE user_id = ? AND course_id = ? LIMIT 1");
                 $stmtC = $pdo->prepare("SELECT id FROM courses WHERE id = ? LIMIT 1");
@@ -110,13 +110,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['app
             }
 
             elseif ($action === 'reject') {
+                // IMPORTANT: Reject should only change status and not delete the row.
                 if ($app['status'] !== 'submitted') {
                     throw new Exception('Only submitted applications can be rejected.');
                 }
                 $reason = trim((string)($_POST['reject_reason'] ?? ''));
+
+                // Update status to rejected and record processed info
                 $u = $pdo->prepare("UPDATE enrollment_applications SET status = 'rejected', processed_at = ?, processed_by = ? WHERE id = ?");
                 $u->execute([$now, $adminId, $appId]);
 
+                // Optional: add audit log with reason
                 try {
                     $log = $pdo->prepare("INSERT INTO admin_audit_log (admin_id, action, target_table, target_id, details) VALUES (?, 'reject_application', 'enrollment_applications', ?, ?)");
                     $log->execute([$adminId, $appId, json_encode(['rejected_at' => $now, 'reason' => $reason])]);
@@ -127,6 +131,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['app
             }
 
             elseif ($action === 'delete') {
+                // Require explicit confirmation flag for delete to avoid accidental deletion
+                if (empty($_POST['confirm_delete']) || (string)$_POST['confirm_delete'] !== '1') {
+                    $pdo->rollBack();
+                    throw new Exception('Delete not confirmed.');
+                }
+
                 // Allow deletion only for non-approved applications (to avoid removing enrollments created by approval).
                 if (($app['status'] ?? '') === 'approved') {
                     throw new Exception('Cannot delete an approved application. Remove enrollments first, then delete the application.');
@@ -218,7 +228,7 @@ $filter_user = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
 // Fetch applications (filter by user if requested). Show all statuses when filtered by user.
 try {
     if ($filter_user > 0) {
-        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, u.username, u.full_name, ea.student_info
+        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, ea.student_info, ea.parent_info, ea.files, ea.course_ids, ea.notes, u.username, u.full_name
                                FROM enrollment_applications ea
                                LEFT JOIN users u ON ea.user_id = u.id
                                WHERE ea.user_id = ?
@@ -226,7 +236,7 @@ try {
         $stmt->execute([$filter_user]);
     } else {
         // Default: show submitted applications first
-        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, u.username, u.full_name, ea.student_info
+        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, ea.student_info, ea.parent_info, ea.files, ea.course_ids, ea.notes, u.username, u.full_name
                                FROM enrollment_applications ea
                                LEFT JOIN users u ON ea.user_id = u.id
                                ORDER BY ea.submitted_at DESC");
@@ -323,6 +333,7 @@ try {
                 <input type="hidden" name="csrf_token" value="<?= h($csrf_token) ?>">
                 <input type="hidden" name="application_id" value="<?= (int)$view_app['id'] ?>">
                 <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="confirm_delete" value="1">
                 <button type="submit" class="inline-flex items-center px-3 py-1 text-sm rounded bg-gray-800 text-white hover:bg-gray-900">Delete</button>
               </form>
             <?php else: ?>
@@ -379,7 +390,7 @@ try {
                   <li>
                     <?php if (!empty($f['type'])): ?><strong><?= h($f['type']) ?>:</strong> <?php endif; ?>
                     <?php if (!empty($f['stored_name'])): ?>
-                      <a href="<?= h($f['stored_name']) ?>" target="_blank" class="text-indigo-600 hover:underline"><?= h($f['original_name'] ?? 'file') ?></a>
+                      <a href="<?= h($f['stored_name']) ?>" target="_blank" rel="noopener" class="text-indigo-600 hover:underline"><?= h($f['original_name'] ?? 'file') ?></a>
                     <?php else: ?>
                       <?= h($f['original_name'] ?? 'file') ?>
                     <?php endif; ?>
@@ -410,6 +421,7 @@ try {
               <input type="hidden" name="csrf_token" value="<?= h($csrf_token) ?>">
               <input type="hidden" name="application_id" value="<?= (int)$view_app['id'] ?>">
               <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="confirm_delete" value="1">
               <button type="submit" class="px-4 py-2 rounded bg-gray-800 text-white hover:bg-gray-900">Delete</button>
             </form>
           <?php else: ?>
@@ -426,53 +438,183 @@ try {
       </section>
     <?php endif; ?>
 
-    <?php if (empty($applications)): ?>
-      <div class="p-6 bg-white rounded shadow">No applications found.</div>
-    <?php else: ?>
-      <div class="space-y-4">
-        <?php foreach ($applications as $app): ?>
+    <!-- Replaced applications list view with card-style "Your Applications" layout -->
+    <section id="applications" class="bg-white shadow rounded-lg p-6">
+      <h3 class="text-lg font-medium text-gray-900 mb-3">Your Applications</h3>
+
+      <?php if (empty($applications)): ?>
+        <div class="text-sm text-gray-600">You have not submitted any enrollment applications yet.</div>
+      <?php else: ?>
+        <div class="space-y-4">
           <?php
-            $studentInfo = json_decode($app['student_info'] ?? '{}', true) ?: [];
-            $statusText = $app['status'] ?? '';
-            [$badgeText, $badgeClass] = status_badge($statusText);
+            // Prepare a small statement to resolve processed_by -> name for list entries
+            $userStmt = $pdo->prepare("SELECT full_name, username FROM users WHERE id = ? LIMIT 1");
           ?>
-          <div class="bg-white p-4 rounded shadow flex items-start justify-between">
-            <div>
-              <div class="text-sm text-gray-500">Application #<?= (int)$app['id'] ?> · Submitted: <?= h($app['submitted_at']) ?></div>
-              <div class="text-lg font-medium mt-1"><?= h($studentInfo['first_name'] ?? $app['full_name'] ?? $app['username'] ?? 'Unknown') ?> <?= h($studentInfo['last_name'] ?? '') ?></div>
-              <div class="text-sm text-gray-600"><?= h($studentInfo['email'] ?? '') ?></div>
-            </div>
+          <?php foreach ($applications as $app): ?>
+            <?php
+              $files = json_decode($app['files'] ?: '[]', true);
+              $courses_applied = json_decode($app['course_ids'] ?: '[]', true);
+              $parent_info = json_decode($app['parent_info'] ?: '[]', true) ?: [];
+              $student_info = json_decode($app['student_info'] ?: '[]', true) ?: [];
+              // resolve processed_by name if possible
+              $processed_by_display = $app['processed_by'] ?? null;
+              if (!empty($app['processed_by'])) {
+                  try {
+                      $userStmt->execute([(int)$app['processed_by']]);
+                      $u = $userStmt->fetch(PDO::FETCH_ASSOC);
+                      if ($u) $processed_by_display = $u['full_name'] ?: $u['username'];
+                  } catch (Throwable $ignore) {}
+              }
+            ?>
+            <div class="border rounded p-4">
+              <div class="flex items-start justify-between">
+                <div>
+                  <div class="text-sm text-gray-900 font-medium">Application #<?= (int)$app['id'] ?></div>
+                  <div class="text-xs text-gray-500">Submitted: <?= h($app['submitted_at']) ?></div>
+                </div>
 
-            <div class="flex items-center space-x-3">
-              <a href="manage_applications.php?view_id=<?= (int)$app['id'] ?>" class="inline-flex items-center px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200">View</a>
+                <div class="flex items-center space-x-2">
+                  <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium <?= ($app['status'] === 'approved' ? 'bg-green-100 text-green-800' : ($app['status'] === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800')) ?>">
+                    <?= h(ucfirst((string)$app['status'])) ?>
+                  </span>
 
-              <a href="manage_applications.php?user_id=<?= (int)$app['user_id'] ?>" class="inline-flex items-center px-3 py-1 text-sm rounded bg-blue-50 text-blue-700 hover:bg-blue-100">View all</a>
+                  <?php if (($app['status'] ?? '') === 'submitted'): ?>
+                    <form method="post" onsubmit="return confirmApprove();" class="inline-block">
+                      <input type="hidden" name="csrf_token" value="<?= h($csrf_token) ?>">
+                      <input type="hidden" name="application_id" value="<?= (int)$app['id'] ?>">
+                      <input type="hidden" name="action" value="approve">
+                      <button type="submit" class="inline-flex items-center px-2 py-1 text-sm rounded bg-green-600 text-white hover:bg-green-700">Approve</button>
+                    </form>
 
-              <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium <?= h($badgeClass) ?>"><?= h($badgeText) ?></span>
+                    <form method="post" onsubmit="return confirmReject();" class="inline-block">
+                      <input type="hidden" name="csrf_token" value="<?= h($csrf_token) ?>">
+                      <input type="hidden" name="application_id" value="<?= (int)$app['id'] ?>">
+                      <input type="hidden" name="action" value="reject">
+                      <button type="submit" class="inline-flex items-center px-2 py-1 text-sm rounded bg-red-600 text-white hover:bg-red-700">Reject</button>
+                    </form>
 
-              <?php if (($app['status'] ?? '') === 'submitted'): ?>
-                <form method="post" onsubmit="return confirmApprove();" class="inline">
-                  <input type="hidden" name="csrf_token" value="<?= h($csrf_token) ?>">
-                  <input type="hidden" name="application_id" value="<?= (int)$app['id'] ?>">
-                  <input type="hidden" name="action" value="approve">
-                  <button type="submit" class="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 text-sm">Approve</button>
-                </form>
+                    <!-- Delete button for non-approved applications (list/card view) -->
+                    <form method="post" onsubmit="return confirmDelete();" class="inline-block">
+                      <input type="hidden" name="csrf_token" value="<?= h($csrf_token) ?>">
+                      <input type="hidden" name="application_id" value="<?= (int)$app['id'] ?>">
+                      <input type="hidden" name="action" value="delete">
+                      <input type="hidden" name="confirm_delete" value="1">
+                      <button type="submit" class="inline-flex items-center px-2 py-1 text-sm rounded bg-gray-800 text-white hover:bg-gray-900">Delete</button>
+                    </form>
+                  <?php else: ?>
+                    <?php if (($app['status'] ?? '') !== 'approved'): ?>
+                      <!-- For non-approved but processed (e.g. rejected), allow delete too -->
+                      <form method="post" onsubmit="return confirmDelete();" class="inline-block">
+                        <input type="hidden" name="csrf_token" value="<?= h($csrf_token) ?>">
+                        <input type="hidden" name="application_id" value="<?= (int)$app['id'] ?>">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="confirm_delete" value="1">
+                        <button type="submit" class="inline-flex items-center px-2 py-1 text-sm rounded bg-gray-800 text-white hover:bg-gray-900">Delete</button>
+                      </form>
+                    <?php else: ?>
+                      <span class="text-xs text-gray-500">Processed</span>
+                    <?php endif; ?>
+                  <?php endif; ?>
+                </div>
+              </div>
 
-                <form method="post" onsubmit="return confirmReject();" class="inline">
-                  <input type="hidden" name="csrf_token" value="<?= h($csrf_token) ?>">
-                  <input type="hidden" name="application_id" value="<?= (int)$app['id'] ?>">
-                  <input type="hidden" name="action" value="reject">
-                  <button type="submit" class="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700 text-sm">Reject</button>
-                </form>
-              <?php else: ?>
-                <span class="text-xs text-gray-500">Processed</span>
+              <div class="mt-3 text-sm text-gray-700">
+                <div><strong>Student:</strong>
+                  <?php if (!empty($student_info) && is_array($student_info)): ?>
+                    <?= h($student_info['first_name'] ?? '') ?> <?= h($student_info['middle_name'] ?? '') ?> <?= h($student_info['last_name'] ?? '') ?> — <?= h($student_info['email'] ?? '') ?>
+                    <div class="text-xs text-gray-500">DOB: <?= h($student_info['birth_date'] ?? '—') ?> · Birthplace: <?= h($student_info['birthplace'] ?? '—') ?> · Gender: <?= h($student_info['gender'] ?? '—') ?> · Age: <?= h($student_info['age'] ?? '—') ?></div>
+                    <?php $a = $student_info['address'] ?? null; if (!empty($a) && is_array($a)): ?>
+                      <div class="text-xs text-gray-500 mt-1">
+                        <?= h($a['house_no'] ?? '') ?> <?= h($a['street'] ?? '') ?> <?= h($a['barangay'] ?? '') ?>, <?= h($a['city'] ?? '') ?>, <?= h($a['province'] ?? '') ?> <?= h($a['country'] ?? '') ?> <?= h($a['zip'] ?? '') ?>
+                      </div>
+                    <?php endif; ?>
+                  <?php else: ?>
+                    <span class="text-gray-500">Not provided</span>
+                  <?php endif; ?>
+                </div>
+
+                <div class="mt-2"><strong>Courses:</strong>
+                  <?php if (empty($courses_applied)): ?>
+                    <span class="text-gray-500">None</span>
+                  <?php else: ?>
+                    <?php
+                      // fetch course labels for this application
+                      $labels = [];
+                      $courseIdsFiltered = array_map('intval', array_values($courses_applied));
+                      if (count($courseIdsFiltered) > 0) {
+                          $placeholders = implode(',', array_fill(0, count($courseIdsFiltered), '?'));
+                          try {
+                              $stmt2 = $pdo->prepare("SELECT course_code, course_name FROM courses WHERE id IN ($placeholders)");
+                              $stmt2->execute($courseIdsFiltered);
+                              $crs = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+                              $labels = array_map(fn($r)=> h($r['course_code']) . ' — ' . h($r['course_name']), $crs);
+                          } catch (Throwable $ignore) {
+                              // ignore failures retrieving course names
+                          }
+                      }
+                    ?>
+                    <?= $labels ? implode(', ', $labels) : '<span class="text-gray-500">None</span>' ?>
+                  <?php endif; ?>
+                </div>
+
+                <?php if (!empty($app['notes'])): ?>
+                  <div class="mt-2"><strong>Notes:</strong> <?= h($app['notes']) ?></div>
+                <?php endif; ?>
+
+                <?php if (!empty($parent_info) && is_array($parent_info)): ?>
+                  <div class="mt-2">
+                    <strong>Parent / Guardian:</strong>
+                    <div class="text-sm text-gray-700">
+                      <?php if (!empty($parent_info['father_name'])): ?><div><strong>Father:</strong> <?= h($parent_info['father_name']) ?></div><?php endif; ?>
+                      <?php if (!empty($parent_info['mother_maiden_name'])): ?><div><strong>Mother (maiden):</strong> <?= h($parent_info['mother_maiden_name']) ?></div><?php endif; ?>
+                      <?php if (!empty($parent_info['legal_guardian_name'])): ?><div><strong>Legal Guardian:</strong> <?= h($parent_info['legal_guardian_name']) ?></div><?php endif; ?>
+                      <?php if (!empty($parent_info['name'])): ?>
+                        <div class="mt-1"><?= h($parent_info['name']) ?> <?php if (!empty($parent_info['relation'])): ?>(<?= h($parent_info['relation']) ?>)<?php endif; ?></div>
+                      <?php endif; ?>
+                      <?php if (!empty($parent_info['guardian_contact'])): ?>
+                        <div class="text-xs text-gray-500">Contact: <?= h($parent_info['guardian_contact']) ?></div>
+                      <?php elseif (!empty($parent_info['contact'])): ?>
+                        <div class="text-xs text-gray-500">Contact: <?= h($parent_info['contact']) ?></div>
+                      <?php endif; ?>
+                      <div class="text-xs text-gray-500 mt-1"> Consent: <?= (!empty($parent_info['consent']) ? 'Yes' : 'No') ?> · Lives with student: <?= (!empty($parent_info['lives_with']) ? 'Yes' : 'No') ?> </div>
+                    </div>
+                  </div>
+                <?php endif; ?>
+
+                <?php if (!empty($files)): ?>
+                  <div class="mt-2"><strong>Documents:</strong>
+                    <ul class="list-disc list-inside">
+                      <?php foreach ($files as $f): ?>
+                        <li>
+                          <?php if (!empty($f['type'])): ?><strong><?= h($f['type']) ?>:</strong> <?php endif; ?>
+                          <?php if (!empty($f['stored_name'])): ?>
+                            <a href="<?= h($f['stored_name']) ?>" target="_blank" rel="noopener" class="text-sky-600 hover:underline"><?= h($f['original_name'] ?? 'file') ?></a>
+                          <?php else: ?>
+                            <?= h($f['original_name'] ?? 'file') ?>
+                          <?php endif; ?>
+                          <?php if (!empty($f['size']) && is_numeric($f['size'])): ?> <span class="text-xs text-gray-400"> (<?= (int)round($f['size']/1024) ?> KB)</span><?php endif; ?>
+                        </li>
+                      <?php endforeach; ?>
+                    </ul>
+                  </div>
+                <?php endif; ?>
+              </div>
+
+              <?php if (!empty($app['processed_at'])): ?>
+                <div class="mt-3 text-xs text-gray-500">Processed at: <?= h($app['processed_at']) ?> by <?= h($processed_by_display ?? 'system') ?></div>
               <?php endif; ?>
+
             </div>
-          </div>
-        <?php endforeach; ?>
-      </div>
-    <?php endif; ?>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+    </section>
 
   </main>
+  <footer class="bg-white border-t mt-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 text-center lg:px-8 py-6 text-sm text-gray-500">
+      © <?= date('Y') ?> Your Institution — Admin Panel
+    </div>
+  </footer>
 </body>
 </html>

@@ -361,15 +361,15 @@ function render_count($v) {
         <h3 class="text-lg font-medium mb-4">Quick Actions</h3>
         <div class="flex flex-col gap-3">
           <a href="manage_courses.php" class="w-full inline-flex items-center justify-between px-4 py-2 border rounded-md bg-brand text-white hover:opacity-95">Add / Edit Courses <span class="text-sm opacity-80">→</span></a>
-          <a href="manage_students.php" class="w-full inline-flex items-center justify-between px-4 py-2 border rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200">Search Students <span class="text-sm opacity-80">→</span></a>
-          <a href="manage_payments.php" class="w-full inline-flex items-center justify-between px-4 py-2 border rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200">Payment Queue <span class="text-sm opacity-80">→</span></a>
+          <a href="manage_students.php" class="w-full inline-flex items-center justify-between px-4 py-2 border rounded-md bg-brand text-white hover:opacity-95">Search Students <span class="text-sm opacity-80">→</span></a>
+          <a href="manage_payments.php" class="w-full inline-flex items-center justify-between px-4 py-2 border rounded-md bg-brand text-white hover:opacity-95">Payment Queue <span class="text-sm opacity-80">→</span></a>
         </div>
       </div>
     </section>
   </main>
 
   <footer class="bg-white border-t">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 text-sm text-gray-500">
+    <div class="max-w-7xl mx-auto px-4 text-center sm:px-6 lg:px-8 py-4 text-sm text-gray-500">
       © <?php echo date('Y'); ?> Your Institution — Admin Panel
     </div>
   </footer>
