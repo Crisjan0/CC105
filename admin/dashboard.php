@@ -1,24 +1,48 @@
 <?php
-require_once '../includes/db_connect.php';
-require_once '../includes/auth.php';
+// public/admin_dashboard.php
+// Admin Dashboard (updated)
+// - More robust admin name resolution (session + DB fallback)
+// - Safer session handling
+// - Improved try_count implementation (PDO + mysqli support)
+// - Added submitted applications count
+// - More resilient recent-logs reader (accepts several common column names)
+// - Minor UI tweaks: shows Submitted Applications and Applicants counts
+//
+// Requires: ../includes/db_connect.php (PDO $pdo or mysqli $conn) and ../includes/auth.php
+// Place in public/ (or admin/) and protect via require_admin() as shown below.
+
+require_once __DIR__ . '/../includes/db_connect.php';
+require_once __DIR__ . '/../includes/auth.php';
 require_admin();
 
-// Helper: detect admin display name from session
-$adminName = "";
+// Ensure session started
 if (session_status() !== PHP_SESSION_ACTIVE) {
     @session_start();
 }
+
+// Resolve admin display name: prefer session full name, then username, then try DB lookup by id
+$adminName = '';
 if (!empty($_SESSION['user']['name'])) {
     $adminName = htmlspecialchars($_SESSION['user']['name']);
 } elseif (!empty($_SESSION['username'])) {
     $adminName = htmlspecialchars($_SESSION['username']);
+} elseif (!empty($_SESSION['user_id']) && isset($pdo) && $pdo instanceof PDO) {
+    try {
+        $stmt = $pdo->prepare("SELECT full_name, username FROM users WHERE id = ? LIMIT 1");
+        $stmt->execute([(int)$_SESSION['user_id']]);
+        $r = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($r) {
+            $adminName = htmlspecialchars($r['full_name'] ?: $r['username']);
+        }
+    } catch (Throwable $e) {
+        // ignore and continue with blank adminName
+        error_log('Admin name lookup failed: ' . $e->getMessage());
+    }
 }
 
-// Helper function to attempt multiple count queries and return first successful integer or null
+// Helper: attempt multiple count queries and return first successful integer or null
 function try_count(array $queries) {
-    // Use globals that db_connect.php may provide
     global $pdo, $conn;
-
     foreach ($queries as $sql) {
         try {
             if (!empty($pdo) && $pdo instanceof PDO) {
@@ -29,7 +53,7 @@ function try_count(array $queries) {
                         return (int)$val;
                     }
                 }
-            } elseif (!empty($conn)) { // mysqli
+            } elseif (!empty($conn) && $conn instanceof mysqli) {
                 if ($result = $conn->query($sql)) {
                     $row = $result->fetch_row();
                     if ($row !== null && isset($row[0])) {
@@ -38,53 +62,84 @@ function try_count(array $queries) {
                 }
             }
         } catch (Throwable $e) {
-            // ignore and try next query
+            // try next query
+            continue;
         }
     }
     return null;
 }
 
-// Prepare plausible queries for each metric.
+// Prepare realistic queries for each metric
 $activeCoursesQueries = [
-    "SELECT COUNT(*) FROM courses WHERE active=1",
-    "SELECT COUNT(*) FROM courses WHERE status='active'",
-    "SELECT COUNT(*) FROM courses"
+    "SELECT COUNT(*) FROM courses",
+    // alternate: some schemas may include active flag
+    "SELECT COUNT(*) FROM courses WHERE IFNULL(active,1)=1"
 ];
 
 $enrolledStudentsQueries = [
-    "SELECT COUNT(DISTINCT student_id) FROM enrollments WHERE status IN ('enrolled','active')",
-    "SELECT COUNT(DISTINCT student_id) FROM enrollments",
-    "SELECT COUNT(*) FROM students",
-    "SELECT COUNT(*) FROM users WHERE role='student'"
+    // our app stores enrollments.user_id
+    "SELECT COUNT(DISTINCT user_id) FROM enrollments",
+    // fallback to users table if enrollments missing
+    "SELECT COUNT(*) FROM users WHERE role = 'student'"
 ];
 
 $pendingPaymentsQueries = [
-  "SELECT COUNT(*) FROM payments WHERE payment_status = 'pending'",
-  // fallback if your schema uses a different column name:
-  "SELECT COUNT(*) FROM payments WHERE status = 'pending'",
-  // last-resort: return total payments (should not be used normally)
-  "SELECT COUNT(*) FROM payments"
+    "SELECT COUNT(*) FROM payments WHERE payment_status = 'pending'",
+    "SELECT COUNT(*) FROM payments WHERE status = 'pending'",
+    "SELECT COUNT(*) FROM payments"
 ];
 
 $completedPaymentsQueries = [
-  "SELECT COUNT(*) FROM payments WHERE payment_status = 'completed'",
-  // fallback if your schema uses a different column name:
-  "SELECT COUNT(*) FROM payments WHERE status = 'completed'",
-  // last-resort: return total payments (should not be used normally)
-  "SELECT COUNT(*) FROM payments"
+    "SELECT COUNT(*) FROM payments WHERE payment_status = 'completed'",
+    "SELECT COUNT(*) FROM payments WHERE status = 'completed'",
+    "SELECT COUNT(*) FROM payments"
 ];
 
+$submittedApplicationsQueries = [
+    "SELECT COUNT(*) FROM enrollment_applications WHERE status = 'submitted'",
+    "SELECT COUNT(*) FROM enrollment_applications"
+];
+
+// run counts
 $activeCourses = try_count($activeCoursesQueries);
 $enrolledStudents = try_count($enrolledStudentsQueries);
 $pendingPayments = try_count($pendingPaymentsQueries);
 $completedPayments = try_count($completedPaymentsQueries);
+$submittedApplications = try_count($submittedApplicationsQueries);
 
-// Recent logs: try several likely table names and return rows
+// Applicants count (distinct users who submitted applications)
+function count_applicants() {
+    global $pdo, $conn;
+    try {
+        if (!empty($pdo) && $pdo instanceof PDO) {
+            $stmt = $pdo->query("SELECT COUNT(DISTINCT user_id) FROM enrollment_applications");
+            return (int)$stmt->fetchColumn();
+        } elseif (!empty($conn) && $conn instanceof mysqli) {
+            $res = $conn->query("SELECT COUNT(DISTINCT user_id) FROM enrollment_applications");
+            $r = $res->fetch_row();
+            return (int)$r[0];
+        }
+    } catch (Throwable $e) {
+        error_log('count_applicants error: ' . $e->getMessage());
+    }
+    return null;
+}
+$applicantsCount = count_applicants();
+
+// Recent logs: try several likely table names and flexible columns
 function fetch_logs($limit = 10) {
     global $pdo, $conn;
     $tables = ['system_logs', 'logs', 'audit_logs', 'admin_logs'];
     foreach ($tables as $table) {
-        $sql = "SELECT id, created_at, level, message FROM `$table` ORDER BY created_at DESC LIMIT " . (int)$limit;
+        // try many common column names in SELECT so we don't fail if a column is missing
+        $sql = "SELECT
+                    COALESCE(id, '') AS id,
+                    COALESCE(created_at, created_on, time, '') AS created_at,
+                    COALESCE(level, severity, '') AS level,
+                    COALESCE(message, msg, text, '') AS message
+                FROM `$table`
+                ORDER BY COALESCE(created_at, created_on, time) DESC
+                LIMIT " . (int)$limit;
         try {
             if (!empty($pdo) && $pdo instanceof PDO) {
                 $stmt = $pdo->query($sql);
@@ -92,7 +147,7 @@ function fetch_logs($limit = 10) {
                     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     if (!empty($rows)) return [$table, $rows];
                 }
-            } elseif (!empty($conn)) {
+            } elseif (!empty($conn) && $conn instanceof mysqli) {
                 if ($result = $conn->query($sql)) {
                     $rows = [];
                     while ($r = $result->fetch_assoc()) $rows[] = $r;
@@ -101,6 +156,7 @@ function fetch_logs($limit = 10) {
             }
         } catch (Throwable $e) {
             // try next table
+            continue;
         }
     }
     return [null, []];
@@ -120,7 +176,7 @@ function render_count($v) {
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Admin Dashboard</title>
 
-  <!-- Tailwind CDN for quick prototyping. Replace with a compiled build for production -->
+  <!-- Tailwind CDN for quick prototyping. Replace with compiled CSS in production. -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -128,8 +184,8 @@ function render_count($v) {
         extend: {
           colors: {
             brand: {
-              DEFAULT: '#1f2937', /* gray-800 */
-              accent: '#0ea5a4'   /* teal-500 */
+              DEFAULT: '#1f2937',
+              accent: '#0ea5a4'
             }
           }
         }
@@ -137,9 +193,7 @@ function render_count($v) {
     }
   </script>
   <style>
-    body::-webkit-scrollbar{
-      display:none;
-    }
+    body::-webkit-scrollbar{ display:none; }
   </style>
 </head>
 <body class="min-h-screen bg-gray-50 text-gray-800">
@@ -163,7 +217,7 @@ function render_count($v) {
           <?php endif; ?>
 
           <a href="../public/logout.php"
-             class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+             class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
              aria-label="Logout">Logout</a>
         </div>
       </div>
@@ -265,6 +319,20 @@ function render_count($v) {
           </div>
         </div>
 
+        <div class="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="p-4 bg-white rounded border">
+            <p class="text-sm text-gray-500">Submitted Applications</p>
+            <p class="mt-2 text-xl font-semibold"><?php echo render_count($submittedApplications); ?></p>
+          </div>
+          <div class="p-4 bg-white rounded border">
+            <p class="text-sm text-gray-500">Applicants</p>
+            <p class="mt-2 text-xl font-semibold"><?php echo render_count($applicantsCount); ?></p>
+          </div>
+          <div class="p-4 bg-white rounded border">
+            <p class="text-sm text-gray-500">Recent Logs</p>
+            <p class="mt-2 text-xl font-semibold"><?php echo (empty($recentLogs) ? '—' : count($recentLogs)); ?></p>
+          </div>
+        </div>
 
         <?php if (!empty($recentLogs)): ?>
           <div class="mt-6">
@@ -275,10 +343,10 @@ function render_count($v) {
                   <li class="border-l-4 border-gray-200 pl-3">
                     <div class="flex justify-between items-start">
                       <div class="pr-4">
-                        <div class="text-xs text-gray-500"><?php echo isset($row['created_at']) ? htmlspecialchars($row['created_at']) : ''; ?> <?php echo isset($row['level']) ? ' · ' . htmlspecialchars($row['level']) : ''; ?></div>
+                        <div class="text-xs text-gray-500"><?php echo isset($row['created_at']) ? htmlspecialchars($row['created_at']) : ''; ?> <?php echo isset($row['level']) && $row['level'] !== '' ? ' · ' . htmlspecialchars($row['level']) : ''; ?></div>
                         <div class="text-sm text-gray-800"><?php echo isset($row['message']) ? htmlspecialchars(mb_strimwidth($row['message'], 0, 200, '...')) : '[no message]'; ?></div>
                       </div>
-                      <div class="text-xs text-gray-400"><?php echo isset($row['id']) ? '#'.htmlspecialchars($row['id']) : ''; ?></div>
+                      <div class="text-xs text-gray-400"><?php echo isset($row['id']) && $row['id'] !== '' ? '#'.htmlspecialchars($row['id']) : ''; ?></div>
                     </div>
                   </li>
                 <?php endforeach; ?>
@@ -305,6 +373,5 @@ function render_count($v) {
       © <?php echo date('Y'); ?> Your Institution — Admin Panel
     </div>
   </footer>
-
 </body>
 </html>
