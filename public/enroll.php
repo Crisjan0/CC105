@@ -1,17 +1,9 @@
 <?php
-// public/enroll.php
-// Enrollment application form with embedded "Pay Fees" form and server-side handling.
-// If student provides an amount it will create a pending payment (optionally linked to an application).
-// The enroll flow remains the same; a separate POST action 'record_payment' is added to handle payments.
-//
-// Requires: ../includes/db_connect.php (provides $pdo) and ../includes/auth.php
-// Place this file in public/ directory.
 
 require_once __DIR__ . '/../includes/db_connect.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
 
-// Ensure session
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
@@ -22,7 +14,6 @@ if (!$user_id) {
     exit;
 }
 
-// Try to fetch current user's basic info to prefill email/name if available
 $current_user = ['full_name' => '', 'first_name' => '', 'middle_name' => '', 'last_name' => '', 'email' => ''];
 try {
     $stmt = $pdo->prepare("SELECT full_name, email FROM users WHERE id = ? LIMIT 1");
@@ -31,7 +22,6 @@ try {
     if ($u) {
         $current_user['full_name'] = $u['full_name'] ?? '';
         $current_user['email'] = $u['email'] ?? '';
-        // split full_name into first/middle/last safely
         $parts = preg_split('/\s+/', trim($current_user['full_name']));
         $current_user['first_name'] = $parts[0] ?? '';
         if (count($parts) === 1) {
@@ -41,39 +31,37 @@ try {
             $current_user['middle_name'] = '';
             $current_user['last_name'] = $parts[1];
         } else {
-            // first = first part, last = last part, middle = the rest
             $current_user['last_name'] = array_pop($parts);
-            array_shift($parts); // remove first
+            array_shift($parts); 
             $current_user['middle_name'] = implode(' ', $parts);
         }
     }
 } catch (Exception $e) {
-    // ignore; prefill will be empty
 }
 
-// Config
-$UPLOAD_BASE = __DIR__ . '/../uploads/enrollment_applications'; // ensure writable
-$PAY_UPLOAD_BASE = __DIR__ . '/../uploads/payments'; // payment proofs
-$MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB per file for documents
-$MAX_PROOF_SIZE = 8 * 1024 * 1024; // 8 MB for payment proof
+$UPLOAD_BASE = __DIR__ . '/../uploads/enrollment_applications'; 
+$PAY_UPLOAD_BASE = __DIR__ . '/../uploads/payments'; 
+$MAX_FILE_SIZE = 5 * 1024 * 1024; 
+$MAX_PROOF_SIZE = 8 * 1024 * 1024; 
 $ALLOWED_MIME = [
     'application/pdf',
     'image/jpeg',
     'image/png',
 ];
 
-// Payment config: fee per credit (used only when student doesn't provide an amount)
 if (!defined('FEE_PER_CREDIT')) {
-    define('FEE_PER_CREDIT', 500.00); // change to your institution's per-credit rate
+    define('FEE_PER_CREDIT', 500.00); 
 }
 
-// CSRF token
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(24));
 }
 $csrf_token = $_SESSION['csrf_token'];
 
-// Flash helpers
+// Calculate base URL for file links
+$projectDir = basename(dirname(__DIR__));
+$baseUrl = '/' . $projectDir;
+
 function set_flash($msg) {
     $_SESSION['flash'] = $msg;
 }
@@ -89,19 +77,16 @@ function get_flash() {
 $info_msg = get_flash();
 $error_msg = '';
 
-// Helper sanitize small text
 function clean_text($s) {
     return trim(mb_substr((string)$s, 0, 2000));
 }
 
-// Simple date validation (YYYY-MM-DD)
 function valid_date($d) {
     $t = strtotime($d);
     if ($t === false) return false;
     return date('Y-m-d', $t) === $d || date('Y-m-d', $t) === $d;
 }
 
-// Helper to compute age from birth date (YYYY-MM-DD)
 function compute_age($birth_date) {
     try {
         $b = new DateTime($birth_date);
@@ -113,13 +98,10 @@ function compute_age($birth_date) {
     }
 }
 
-// ---------- Payment recording handler (embedded) ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'record_payment') {
-    // CSRF
     if (empty($_POST['csrf_token']) || !hash_equals($csrf_token, $_POST['csrf_token'])) {
         $error_msg = 'Invalid CSRF token for payment.';
     } else {
-        // Validate amount
         $amount_raw = str_replace(',', '', trim((string)($_POST['amount'] ?? '')));
         if ($amount_raw === '' || !is_numeric($amount_raw) || (float)$amount_raw <= 0) {
             $error_msg = 'Please enter a valid payment amount greater than zero.';
@@ -127,13 +109,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $amount = round((float)$amount_raw, 2);
         }
 
-        // application link (optional)
         $application_id = null;
         if (!empty($_POST['application_id'])) {
             $application_id = (int)$_POST['application_id'];
         }
 
-        // Handle proof file (optional)
         $proof_path = null;
         if ($error_msg === '' && !empty($_FILES['proof']) && is_array($_FILES['proof'])) {
             $file = $_FILES['proof'];
@@ -166,16 +146,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
-        // Insert payment when no errors
         if ($error_msg === '') {
             try {
-                // Try insert with application_id if provided; fallback if schema differs
                 if ($application_id) {
                     try {
                         $pstmt = $pdo->prepare("INSERT INTO payments (application_id, user_id, amount, payment_date, payment_status) VALUES (?, ?, ?, NOW(), 'pending')");
                         $pstmt->execute([$application_id, $user_id, $amount]);
                     } catch (PDOException $ex) {
-                        // fallback without application_id
                         error_log('payments insert with application_id failed: ' . $ex->getMessage());
                         $pstmt = $pdo->prepare("INSERT INTO payments (user_id, amount, payment_date, payment_status) VALUES (?, ?, NOW(), 'pending')");
                         $pstmt->execute([$user_id, $amount]);
@@ -186,7 +163,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 }
                 $payment_id = (int)$pdo->lastInsertId();
 
-                // Save proof path if possible (try couple of column names)
                 if ($proof_path !== null) {
                     try {
                         $pdo->prepare("UPDATE payments SET proof = ? WHERE id = ?")->execute([$proof_path, $payment_id]);
@@ -210,26 +186,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
     }
 }
-// ---------- End payment handler ----------
 
-// Handle application submission (existing)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_application') {
-    // Basic CSRF check
-    if (empty($_POST['csrf_token']) || !hash_equals($csrf_token, $_POST['csrf_token'])) {
+    if ($has_approved_application) {
+        $error_msg = 'You already have an approved application. You cannot submit another one.';
+    } elseif (empty($_POST['csrf_token']) || !hash_equals($csrf_token, $_POST['csrf_token'])) {
         $error_msg = 'Invalid form submission (CSRF check failed).';
     } else {
-        // --- Collect selected course: single radio "course_id" ---
         $course_id = isset($_POST['course_id']) ? (int)$_POST['course_id'] : null;
         if (!$course_id) {
             $error_msg = 'Please select one course to apply for.';
         } else {
-            // keep consistent shape: store as array of ints
             $course_ids = [$course_id];
 
-            // optional cover letter / notes
             $notes = clean_text($_POST['notes'] ?? '');
 
-            // Student information (now includes middle_name and birthplace)
             $student_first = clean_text($_POST['student_first_name'] ?? '');
             $student_middle = clean_text($_POST['student_middle_name'] ?? '');
             $student_last = clean_text($_POST['student_last_name'] ?? '');
@@ -237,7 +208,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $student_birthplace = clean_text($_POST['student_birthplace'] ?? '');
             $student_gender = in_array($_POST['student_gender'] ?? '', ['male','female','other'], true) ? $_POST['student_gender'] : '';
 
-            // Structured address fields (added inputs in the form)
             $addr_house = clean_text($_POST['student_addr_house'] ?? '');
             $addr_street = clean_text($_POST['student_addr_street'] ?? '');
             $addr_barangay = clean_text($_POST['student_addr_barangay'] ?? '');
@@ -249,18 +219,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $student_contact = clean_text($_POST['student_contact'] ?? '');
             $student_email = trim($_POST['student_email'] ?? '');
 
-            // New fields: religion and age (age can be provided or computed from birth date)
             $student_religion = clean_text($_POST['student_religion'] ?? '');
             $student_age_input = trim($_POST['student_age'] ?? '');
             $student_age = null;
             if ($student_age_input !== '') {
-                // accept numeric age
                 $student_age = is_numeric($student_age_input) ? (int)$student_age_input : null;
             } elseif ($student_birth !== '' && valid_date($student_birth)) {
                 $student_age = compute_age($student_birth);
             }
 
-            // Indigenous peoples question
             $indigenous_belongs = null;
             if (isset($_POST['indigenous_belongs'])) {
                 $val = $_POST['indigenous_belongs'];
@@ -269,23 +236,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
             $indigenous_spec = clean_text($_POST['indigenous_spec'] ?? '');
 
-            // Accept an optional manual amount from the student (matches the UI in your screenshot)
             $manual_amount_raw = trim((string)($_POST['amount'] ?? ''));
             $manual_amount = null;
             if ($manual_amount_raw !== '') {
-                // Normalize commas and whitespace
                 $manual_amount_norm = str_replace(',', '', $manual_amount_raw);
                 if (is_numeric($manual_amount_norm)) {
                     $manual_amount = round((float)$manual_amount_norm, 2);
-                    if ($manual_amount <= 0) {
-                        $error_msg = 'If you enter an amount it must be greater than zero.';
+                    if ($manual_amount < 1000) {
+                        $error_msg = 'Down payment must be at least 1000.';
                     }
                 } else {
                     $error_msg = 'Please enter a valid numeric amount.';
                 }
             }
 
-            // Basic validation for student info
             if ($error_msg === '' && ($student_first === '' || $student_last === '')) {
                 $error_msg = 'Please provide student first and last name.';
             } elseif ($error_msg === '' && ($student_email === '' || !filter_var($student_email, FILTER_VALIDATE_EMAIL))) {
@@ -296,14 +260,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $error_msg = 'Please enter a valid age.';
             }
 
-            // Parent / guardian fields (extended to include father/mother/legal guardian/contact)
             $parent_name = clean_text($_POST['parent_name'] ?? '');
             $parent_relation = clean_text($_POST['parent_relation'] ?? '');
             $parent_contact = clean_text($_POST['parent_contact'] ?? '');
             $parent_consent = isset($_POST['parent_consent']) && $_POST['parent_consent'] === '1' ? true : false;
             $parent_lives_with = isset($_POST['parent_lives_with']) && $_POST['parent_lives_with'] === '1' ? true : false;
 
-            // New explicit fields from the image
             $father_name = clean_text($_POST['father_name'] ?? '');
             $mother_maiden_name = clean_text($_POST['mother_maiden_name'] ?? '');
             $legal_guardian_name = clean_text($_POST['legal_guardian_name'] ?? '');
@@ -315,14 +277,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 'contact' => $parent_contact,
                 'consent' => $parent_consent,
                 'lives_with' => $parent_lives_with,
-                // added structured fields
                 'father_name' => $father_name ?: null,
                 'mother_maiden_name' => $mother_maiden_name ?: null,
                 'legal_guardian_name' => $legal_guardian_name ?: null,
                 'guardian_contact' => $guardian_contact ?: null,
             ];
 
-            // Student info array (address as structured object) includes middle_name and birthplace
             $student_info = [
                 'first_name' => $student_first,
                 'middle_name' => $student_middle ?: null,
@@ -349,15 +309,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 ],
             ];
 
-            // Files handling
-            $uploadedFiles = []; // will store info arrays: original_name, stored_name, mime, size, type
-            // Ensure user upload dir exists
+            $uploadedFiles = []; 
             $userDir = $UPLOAD_BASE . '/user_' . (int)$user_id;
             if (!is_dir($userDir)) {
                 @mkdir($userDir, 0755, true);
             }
 
-            // Helper to process a single-file input; throws RuntimeException on error
             $process_single_file = function($fieldName, $label) use (&$uploadedFiles, $userDir, $MAX_FILE_SIZE, $ALLOWED_MIME, $user_id) {
                 if (empty($_FILES[$fieldName])) return;
                 $file = $_FILES[$fieldName];
@@ -394,7 +351,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                 @chmod($dest, 0644);
 
-                // stored_name is web-accessible relative path (adjust if your uploads are served differently)
                 $uploadedFiles[] = [
                     'original_name' => $orig,
                     'stored_name' => 'uploads/enrollment_applications/user_' . (int)$user_id . '/' . $stored,
@@ -404,15 +360,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 ];
             };
 
-            // Process required/important individual file inputs
             try {
-                // These field names match the new inputs in the form below
                 $process_single_file('psa', 'PSA');
                 $process_single_file('report_card', 'Report Card');
                 $process_single_file('form_138', 'Form 138');
                 $process_single_file('good_moral', 'Good Moral');
 
-                // Process additional multiple files in documents[] (optional)
                 if (!empty($_FILES['documents']) && is_array($_FILES['documents']['name'])) {
                     for ($i = 0; $i < count($_FILES['documents']['name']); $i++) {
                         $err = $_FILES['documents']['error'][$i];
@@ -543,6 +496,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// Check if user already has an approved application
+$has_approved_application = false;
+try {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM enrollment_applications WHERE user_id = ? AND status = 'approved'");
+    $stmt->execute([$user_id]);
+    if ($stmt->fetchColumn() > 0) {
+        $has_approved_application = true;
+    }
+} catch (Exception $e) {
+    // ignore
+}
+
 // Fetch available courses
 try {
     $stmt = $pdo->query("SELECT id, course_code, course_name, credits FROM courses ORDER BY course_name ASC");
@@ -610,8 +575,8 @@ function h($v) {
         const amt = document.querySelector('input[name="amount"]').value.trim();
         if (amt !== '') {
           const normalized = amt.replace(/,/g, '');
-          if (isNaN(normalized) || Number(normalized) <= 0) {
-            alert('Please enter a valid amount greater than zero or leave it blank.');
+          if (isNaN(normalized) || Number(normalized) < 1000) {
+            alert('Please enter a valid amount of at least 1000 or leave it blank.');
             return false;
           }
         }
@@ -680,224 +645,239 @@ function h($v) {
       </div>
     <?php endif; ?>
 
-    <section class="bg-white shadow rounded-lg p-6 mb-6">
-      <h2 class="text-lg font-medium text-gray-900 mb-3">Application Details & Student Information</h2>
-
-      <!-- Single form that contains course selection + student info -->
+    <?php if ($has_approved_application): ?>
+        <div class="bg-green-50 border border-green-200 rounded-lg p-8 mb-8 text-center shadow-sm">
+            <svg class="mx-auto h-16 w-16 text-green-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <h3 class="text-xl font-semibold text-green-900 mb-2">Application Approved</h3>
+            <p class="text-green-700 max-w-md mx-auto">
+                Congratulations! Your enrollment application has been approved. You are already enrolled and cannot submit a new application at this time.
+            </p>
+            <div class="mt-6">
+                <a href="dashboard.php" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                    Return to Dashboard
+                </a>
+            </div>
+        </div>
+    <?php else: ?>
+    <!-- Single form that contains course selection + student info -->
       <form method="post" enctype="multipart/form-data" onsubmit="return confirmApplication();">
         <input type="hidden" name="csrf_token" value="<?= h($csrf_token) ?>">
         <input type="hidden" name="action" value="submit_application">
 
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-2">Select a course to apply for</label>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-auto border rounded p-2">
-            <?php foreach ($courses as $c): ?>
-              <label class="inline-flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
-                <input type="radio" name="course_id" value="<?= (int)$c['id'] ?>" class="h-4 w-4 text-sky-600 border-gray-300 rounded"
-                  <?= ((int)($_POST['course_id'] ?? 0) === (int)$c['id']) ? 'checked' : '' ?> aria-label="<?= h($c['course_code'] . ' - ' . $c['course_name']) ?>">
-                <span class="text-sm">
-                  <strong><?= h($c['course_code']) ?></strong> — <?= h($c['course_name']) ?> <span class="text-xs text-gray-500">(<?= (int)$c['credits'] ?> cr)</span>
-                </span>
-              </label>
-            <?php endforeach; ?>
-          </div>
-          <p class="text-xs text-gray-500 mt-1">You may apply for only one course per application. To apply for additional courses submit separate applications.</p>
+        <!-- Card 1: Course Selection -->
+        <div class="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Course Selection</h2>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Select a course to apply for</label>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-auto border rounded p-2">
+                    <?php foreach ($courses as $c): ?>
+                    <label class="inline-flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                        <input type="radio" name="course_id" value="<?= (int)$c['id'] ?>" class="h-4 w-4 text-sky-600 border-gray-300 rounded"
+                        <?= ((int)($_POST['course_id'] ?? 0) === (int)$c['id']) ? 'checked' : '' ?> aria-label="<?= h($c['course_code'] . ' - ' . $c['course_name']) ?>">
+                        <span class="text-sm">
+                        <strong><?= h($c['course_code']) ?></strong> — <?= h($c['course_name']) ?> <span class="text-xs text-gray-500">(<?= (int)$c['credits'] ?> cr)</span>
+                        </span>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">You may apply for only one course per application. To apply for additional courses submit separate applications.</p>
+            </div>
         </div>
 
-        <!-- Student name / basic info grid -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700">First Name</label>
-            <input type="text" name="student_first_name" value="<?= h($_POST['student_first_name'] ?? $current_user['first_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="Your First Name"  />
-          </div>
+        <!-- Card 2: Student Information -->
+        <div class="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Student Information</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">First Name</label>
+                    <input type="text" name="student_first_name" value="<?= h($_POST['student_first_name'] ?? $current_user['first_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="Your First Name"  />
+                </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Middle Name</label>
-            <input type="text" name="student_middle_name" value="<?= h($_POST['student_middle_name'] ?? $current_user['middle_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Middle Name (optional)" />
-          </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Middle Name</label>
+                    <input type="text" name="student_middle_name" value="<?= h($_POST['student_middle_name'] ?? $current_user['middle_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Middle Name (optional)" />
+                </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Last Name</label>
-            <input type="text" name="student_last_name" value="<?= h($_POST['student_last_name'] ?? $current_user['last_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="Your Last Name" />
-          </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Last Name</label>
+                    <input type="text" name="student_last_name" value="<?= h($_POST['student_last_name'] ?? $current_user['last_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="Your Last Name" />
+                </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Birth Date</label>
-            <input onchange="updateAgeFromDob()" type="date" name="student_birth_date" value="<?= h($_POST['student_birth_date'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
-          </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Birth Date</label>
+                    <input onchange="updateAgeFromDob()" type="date" name="student_birth_date" value="<?= h($_POST['student_birth_date'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+                </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Age</label>
-            <input type="number" min="0" name="student_age" value="<?= h($_POST['student_age'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Age (years)" />
-          </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Age</label>
+                    <input type="number" min="0" name="student_age" value="<?= h($_POST['student_age'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Age (years)" />
+                </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Gender</label>
-            <div class="mt-1 flex items-center space-x-4">
-              <label class="inline-flex items-center"><input type="radio" name="student_gender" value="male" <?= (($_POST['student_gender'] ?? '') === 'male') ? 'checked' : '' ?> class="h-4 w-4" /> <span class="ml-2 text-sm">Male</span></label>
-              <label class="inline-flex items-center"><input type="radio" name="student_gender" value="female" <?= (($_POST['student_gender'] ?? '') === 'female') ? 'checked' : '' ?> class="h-4 w-4" /> <span class="ml-2 text-sm">Female</span></label>
-              <label class="inline-flex items-center"><input type="radio" name="student_gender" value="other" <?= (($_POST['student_gender'] ?? '') === 'other') ? 'checked' : '' ?> class="h-4 w-4" /> <span class="ml-2 text-sm">Other</span></label>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Gender</label>
+                    <div class="mt-1 flex items-center space-x-4">
+                    <label class="inline-flex items-center"><input type="radio" name="student_gender" value="male" <?= (($_POST['student_gender'] ?? '') === 'male') ? 'checked' : '' ?> class="h-4 w-4" /> <span class="ml-2 text-sm">Male</span></label>
+                    <label class="inline-flex items-center"><input type="radio" name="student_gender" value="female" <?= (($_POST['student_gender'] ?? '') === 'female') ? 'checked' : '' ?> class="h-4 w-4" /> <span class="ml-2 text-sm">Female</span></label>
+                    <label class="inline-flex items-center"><input type="radio" name="student_gender" value="other" <?= (($_POST['student_gender'] ?? '') === 'other') ? 'checked' : '' ?> class="h-4 w-4" /> <span class="ml-2 text-sm">Other</span></label>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Religion</label>
+                    <input type="text" name="student_religion" value="<?= h($_POST['student_religion'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="e.g. Christianity, Islam, Indigenous" />
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Birthplace</label>
+                    <input type="text" name="student_birthplace" value="<?= h($_POST['student_birthplace'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Place of birth (city/province/country)" />
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Contact Number</label>
+                    <input type="text" name="student_contact" value="<?= h($_POST['student_contact'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="(000) 000-0000" />
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Email Address</label>
+                    <input type="email" name="student_email" value="<?= h($_POST['student_email'] ?? $current_user['email']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="name@example.com"  />
+                </div>
             </div>
-          </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Religion</label>
-            <input type="text" name="student_religion" value="<?= h($_POST['student_religion'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="e.g. Christianity, Islam, Indigenous" />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Birthplace</label>
-            <input type="text" name="student_birthplace" value="<?= h($_POST['student_birthplace'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Place of birth (city/province/country)" />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Contact Number</label>
-            <input type="text" name="student_contact" value="<?= h($_POST['student_contact'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="(000) 000-0000" />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-700">Email Address</label>
-            <input type="email" name="student_email" value="<?= h($_POST['student_email'] ?? $current_user['email']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="name@example.com"  />
-          </div>
+            <!-- Indigenous Peoples question -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Belonging to any Indigenous Peoples (IP) Community / Indigenous Cultural Community?</label>
+                <div class="flex items-center space-x-4">
+                    <label class="inline-flex items-center"><input type="radio" name="indigenous_belongs" value="yes" onclick="toggleIndigenousSpecify()" <?= (($_POST['indigenous_belongs'] ?? '') === 'yes') ? 'checked' : '' ?> /> <span class="ml-2 text-sm">Yes</span></label>
+                    <label class="inline-flex items-center"><input type="radio" name="indigenous_belongs" value="no" onclick="toggleIndigenousSpecify()" <?= (($_POST['indigenous_belongs'] ?? '') === 'no') ? 'checked' : '' ?> /> <span class="ml-2 text-sm">No</span></label>
+                    <div id="indigenous_spec_div" class="ml-4" style="display:<?= (($_POST['indigenous_belongs'] ?? '') === 'yes') ? 'block' : 'none' ?>;">
+                    <input type="text" name="indigenous_spec" value="<?= h($_POST['indigenous_spec'] ?? '') ?>" placeholder="If Yes, please specify" class="block w-80 rounded border-gray-300 px-3 py-2 text-sm" />
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <!-- Current Address fields (added to match image) -->
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-2">Student Address</label>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input type="text" name="student_addr_house" value="<?= h($_POST['student_addr_house'] ?? '') ?>" placeholder="House No." class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
-            <input type="text" name="student_addr_street" value="<?= h($_POST['student_addr_street'] ?? '') ?>" placeholder="Sitio / Street" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
-            <input type="text" name="student_addr_barangay" value="<?= h($_POST['student_addr_barangay'] ?? '') ?>" placeholder="Barangay" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
-            <input type="text" name="student_addr_city" value="<?= h($_POST['student_addr_city'] ?? '') ?>" placeholder="Municipality / City" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
-            <input type="text" name="student_addr_province" value="<?= h($_POST['student_addr_province'] ?? '') ?>" placeholder="Province" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
-            <input type="text" name="student_addr_country" value="<?= h($_POST['student_addr_country'] ?? '') ?>" placeholder="Country" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
-            <input type="text" name="student_addr_zip" value="<?= h($_POST['student_addr_zip'] ?? '') ?>" placeholder="ZIP / Postal Code" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
-          </div>
-          <p class="text-xs text-gray-500 mt-1">Fill out your current address. Use the fields provided above (House No., Sitio/Street, Barangay, Municipality/City, Province).</p>
+        <!-- Card 3: Address -->
+        <div class="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Student Address Information</h2>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Student Address</label>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <input type="text" name="student_addr_house" value="<?= h($_POST['student_addr_house'] ?? '') ?>" placeholder="House No." class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+                    <input type="text" name="student_addr_street" value="<?= h($_POST['student_addr_street'] ?? '') ?>" placeholder="Sitio / Street" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+                    <input type="text" name="student_addr_barangay" value="<?= h($_POST['student_addr_barangay'] ?? '') ?>" placeholder="Barangay" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+                    <input type="text" name="student_addr_city" value="<?= h($_POST['student_addr_city'] ?? '') ?>" placeholder="Municipality / City" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+                    <input type="text" name="student_addr_province" value="<?= h($_POST['student_addr_province'] ?? '') ?>" placeholder="Province" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+                    <input type="text" name="student_addr_country" value="<?= h($_POST['student_addr_country'] ?? '') ?>" placeholder="Country" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+                    <input type="text" name="student_addr_zip" value="<?= h($_POST['student_addr_zip'] ?? '') ?>" placeholder="ZIP / Postal Code" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" />
+                </div>
+                <p class="text-xs text-gray-500 mt-1">Fill out your current address. Use the fields provided above (House No., Sitio/Street, Barangay, Municipality/City, Province).</p>
+            </div>
         </div>
 
-        <!-- Indigenous Peoples question -->
-        <div class="md:col-span-2 mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-2">Belonging to any Indigenous Peoples (IP) Community / Indigenous Cultural Community?</label>
-          <div class="flex items-center space-x-4">
-            <label class="inline-flex items-center"><input type="radio" name="indigenous_belongs" value="yes" onclick="toggleIndigenousSpecify()" <?= (($_POST['indigenous_belongs'] ?? '') === 'yes') ? 'checked' : '' ?> /> <span class="ml-2 text-sm">Yes</span></label>
-            <label class="inline-flex items-center"><input type="radio" name="indigenous_belongs" value="no" onclick="toggleIndigenousSpecify()" <?= (($_POST['indigenous_belongs'] ?? '') === 'no') ? 'checked' : '' ?> /> <span class="ml-2 text-sm">No</span></label>
-            <div id="indigenous_spec_div" class="ml-4" style="display:<?= (($_POST['indigenous_belongs'] ?? '') === 'yes') ? 'block' : 'none' ?>;">
-              <input type="text" name="indigenous_spec" value="<?= h($_POST['indigenous_spec'] ?? '') ?>" placeholder="If Yes, please specify" class="block w-80 rounded border-gray-300 px-3 py-2 text-sm" />
+        <!-- Card 4: Parent/Guardian -->
+        <div class="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Parent / Guardian Details</h2>
+            <div class="mb-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Father's Name</label>
+                    <input type="text" name="father_name" value="<?= h($_POST['father_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Father's Full Name (Last, Given, Middle)" />
+                    </div>
+                    <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Mother's Maiden Name</label>
+                    <input type="text" name="mother_maiden_name" value="<?= h($_POST['mother_maiden_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Mother's Maiden Name (Last, Given, Middle)" />
+                    </div>
+                    <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Legal Guardian's Name</label>
+                    <input type="text" name="legal_guardian_name" value="<?= h($_POST['legal_guardian_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Legal Guardian (if applicable)" />
+                    </div>
+                    <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Contact Number</label>
+                    <input type="text" name="guardian_contact" value="<?= h($_POST['guardian_contact'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Contact Number for Parent/Guardian" />
+                    </div>
+
+                    <!-- existing generic parent fields (kept for backward compatibility) -->
+                    <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Primary Parent / Guardian Name</label>
+                    <input type="text" name="parent_name" value="<?= h($_POST['parent_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Name (Primary Contact)" />
+                    </div>
+                    <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Relation to Student</label>
+                    <input type="text" name="parent_relation" value="<?= h($_POST['parent_relation'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="e.g. Mother, Father, Guardian" />
+                    </div>
+                    <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Primary Parent Contact</label>
+                    <input type="text" name="parent_contact" value="<?= h($_POST['parent_contact'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="(000) 000-0000" />
+                    </div>
+                    <div class="flex items-center space-x-3">
+                    <label class="inline-flex items-center"><input type="checkbox" name="parent_consent" value="1" <?= (isset($_POST['parent_consent']) ? 'checked' : '') ?> /> <span class="ml-2 text-sm">Consent given</span></label>
+                    <label class="inline-flex items-center"><input type="checkbox" name="parent_lives_with" value="1" <?= (isset($_POST['parent_lives_with']) ? 'checked' : '') ?> /> <span class="ml-2 text-sm">Lives with student</span></label>
+                    </div>
+                </div>
             </div>
-          </div>
         </div>
 
-        <hr class="my-4" />
-
-        <!-- Parent / Guardian details (added to match image) -->
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-2">Parent / Guardian Details</label>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Father's Name</label>
-              <input type="text" name="father_name" value="<?= h($_POST['father_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Father's Full Name (Last, Given, Middle)" />
+        <!-- Card 5: Requirements -->
+        <div class="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Requirements</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">PSA Birth Certificate</label>
+                    <input type="file" name="psa" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Report Card (Form 138)</label>
+                    <input type="file" name="report_card" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Form 138</label>
+                    <input type="file" name="form_138" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Certificate of Good Moral Character</label>
+                    <input type="file" name="good_moral" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700">Additional Documents</label>
+                    <input type="file" name="documents[]" multiple class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
+                    <p class="text-xs text-gray-500 mt-1">You can select multiple files.</p>
+                </div>
             </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Mother's Maiden Name</label>
-              <input type="text" name="mother_maiden_name" value="<?= h($_POST['mother_maiden_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Mother's Maiden Name (Last, Given, Middle)" />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Legal Guardian's Name</label>
-              <input type="text" name="legal_guardian_name" value="<?= h($_POST['legal_guardian_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Legal Guardian (if applicable)" />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Contact Number</label>
-              <input type="text" name="guardian_contact" value="<?= h($_POST['guardian_contact'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Contact Number for Parent/Guardian" />
-            </div>
-
-            <!-- existing generic parent fields (kept for backward compatibility) -->
-            <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Primary Parent / Guardian Name</label>
-              <input type="text" name="parent_name" value="<?= h($_POST['parent_name'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Name (Primary Contact)" />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Relation to Student</label>
-              <input type="text" name="parent_relation" value="<?= h($_POST['parent_relation'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="e.g. Mother, Father, Guardian" />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Primary Parent Contact</label>
-              <input type="text" name="parent_contact" value="<?= h($_POST['parent_contact'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="(000) 000-0000" />
-            </div>
-            <div class="flex items-center space-x-3">
-              <label class="inline-flex items-center"><input type="checkbox" name="parent_consent" value="1" <?= (isset($_POST['parent_consent']) ? 'checked' : '') ?> /> <span class="ml-2 text-sm">Consent given</span></label>
-              <label class="inline-flex items-center"><input type="checkbox" name="parent_lives_with" value="1" <?= (isset($_POST['parent_lives_with']) ? 'checked' : '') ?> /> <span class="ml-2 text-sm">Lives with student</span></label>
-            </div>
-          </div>
         </div>
 
-        <hr class="my-4" />
-
-        <!-- Payment amount input (styled like your screenshot: boxed full width helper) -->
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-2">Amount</label>
-          <div class="border rounded bg-white p-4">
-            <input
-              type="text"
-              name="amount"
-              id="amount"
-              placeholder="e.g. 1500.00"
-              value="<?= isset($_POST['amount']) ? h($_POST['amount']) : '' ?>"
-              class="block w-full text-gray-700 placeholder-gray-400 border-0 focus:outline-none focus:ring-0 text-sm"
-              aria-label="Amount"
-            />
-            <p class="mt-2 text-xs text-gray-400">Enter the amount for down payment ₱1000. Admin will verify and mark completed.</p>
-          </div>
+        <!-- Card 6: Payment -->
+        <div class="bg-white shadow rounded-lg p-6 mb-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Payment</h2>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Amount</label>
+                <div class="border rounded bg-white p-4">
+                    <input
+                    type="text"
+                    name="amount"
+                    id="amount"
+                    placeholder="e.g. 1500.00"
+                    value="<?= isset($_POST['amount']) ? h($_POST['amount']) : '' ?>"
+                    class="block w-full text-gray-700 placeholder-gray-400 border-0 focus:outline-none focus:ring-0 text-sm"
+                    aria-label="Amount"
+                    />
+                    <p class="mt-2 text-xs text-gray-400">Enter the amount for down payment ₱1000. Admin will verify and mark completed.</p>
+                </div>
+            </div>
         </div>
 
-        <!-- file uploads and submit button -->
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-2">Upload required documents</label>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">PSA (Birth Certificate)</label>
-              <input type="file" name="psa" accept=".pdf,image/jpeg,image/png" class="block w-full" />
-              <p class="text-xs text-gray-400 mt-1">Accepted: PDF, JPG, PNG. Max 5 MB.</p>
-            </div>
-
-            <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Report Card</label>
-              <input type="file" name="report_card" accept=".pdf,image/jpeg,image/png" class="block w-full" />
-              <p class="text-xs text-gray-400 mt-1">Accepted: PDF, JPG, PNG. Max 5 MB.</p>
-            </div>
-
-            <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Form 138</label>
-              <input type="file" name="form_138" accept=".pdf,image/jpeg,image/png" class="block w-full" />
-              <p class="text-xs text-gray-400 mt-1">Accepted: PDF, JPG, PNG. Max 5 MB.</p>
-            </div>
-
-            <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Good Moral Certificate</label>
-              <input type="file" name="good_moral" accept=".pdf,image/jpeg,image/png" class="block w-full" />
-              <p class="text-xs text-gray-400 mt-1">Accepted: PDF, JPG, PNG. Max 5 MB.</p>
-            </div>
-          </div>
-
-          <div class="mt-3">
-            <label class="block text-sm font-medium text-gray-700 mb-1">Additional documents (optional)</label>
-            <input type="file" name="documents[]" multiple accept=".pdf,image/jpeg,image/png" class="block" />
-            <p class="text-xs text-gray-500 mt-1">Use this for any extra attachments. Accepted: PDF, JPG, PNG. Max 5 MB per file.</p>
-          </div>
-        </div>
-
-        <div class="flex items-center space-x-3">
+        <div class="flex items-center justify-end space-x-3">
           <button type="submit" class="inline-flex items-center px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700">Submit Application</button>
           <a href="dashboard.php" class="text-sm text-gray-600 hover:underline">Cancel</a>
         </div>
       </form>
-    </section>
+    <?php endif; ?>
 
     <!-- PAYMENTS SECTION (embedded) -->
    
     <!-- applications listing unchanged -->
-    <section id="applications" class="bg-white shadow rounded-lg p-6">
+    <section id="applications" class="bg-white shadow rounded-lg p-6 mt-7">
       <h3 class="text-lg font-medium text-gray-900 mb-3">Your Applications</h3>
 
       <?php if (empty($applications)): ?>
@@ -987,14 +967,28 @@ function h($v) {
                   </div>
                 <?php endif; ?>
 
-                <?php if (!empty($files)): ?>
-                  <div class="mt-2"><strong>Documents:</strong>
-                    <ul class="list-disc list-inside">
+                <?php if (!empty($files) && is_array($files)): ?>
+                  <div class="mt-2">
+                    <strong>Requirements Submitted:</strong>
+                    <ul class="list-disc list-inside text-sm text-gray-600 mt-1">
                       <?php foreach ($files as $f): ?>
                         <li>
-                          <?php if (!empty($f['type'])): ?><strong><?= h($f['type']) ?>:</strong> <?php endif; ?>
-                          <a href="<?= h($f['stored_name']) ?>" target="_blank" rel="noopener" class="text-sky-600 hover:underline"><?= h($f['original_name']) ?></a>
-                          <span class="text-xs text-gray-400"> (<?= round($f['size']/1024) ?> KB)</span>
+                          <span class="font-medium"><?= h($f['type'] ?? 'Document') ?>:</span>
+                          <a href="<?= h($baseUrl . '/' . $f['stored_name']) ?>" target="_blank" class="text-sky-600 hover:underline"><?= h($f['original_name']) ?></a>
+                          <span class="text-xs text-gray-400">(<?= round(($f['size'] ?? 0) / 1024) ?> KB)</span>
+                            <?php
+                                $isImage = false;
+                                if (isset($f['mime']) && strpos($f['mime'], 'image/') === 0) {
+                                    $isImage = true;
+                                } elseif (preg_match('/\.(jpg|jpeg|png|gif|webp)$/i', $f['original_name'] ?? '')) {
+                                    $isImage = true;
+                                }
+                            ?>
+                            <?php if ($isImage): ?>
+                                <div class="mt-1 mb-2">
+                                    <img src="<?= h($baseUrl . '/' . $f['stored_name']) ?>" alt="Preview" class="max-w-[200px] rounded border shadow-sm">
+                                </div>
+                            <?php endif; ?>
                         </li>
                       <?php endforeach; ?>
                     </ul>

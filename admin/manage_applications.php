@@ -34,6 +34,12 @@ function get_flash() {
 $info_msg = get_flash();
 $error_msg = '';
 
+// Calculate base URL for file links
+// Assuming the project is accessed via http://localhost/ProjectName/admin/...
+// We want /ProjectName
+$projectDir = basename(dirname(__DIR__));
+$baseUrl = '/' . $projectDir;
+
 // Helper
 function h($v){ return htmlspecialchars((string)$v, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
 
@@ -382,15 +388,29 @@ try {
 
           <div>
             <h4 class="font-medium">Documents</h4>
-            <ul class="text-sm text-gray-700 mt-2 space-y-1">
+            <ul class="list-disc list-inside text-sm text-gray-600 mt-1">
               <?php if (empty($view_app['files'])): ?>
                 <li>—</li>
               <?php else: ?>
                 <?php foreach ($view_app['files'] as $f): ?>
                   <li>
-                    <?php if (!empty($f['type'])): ?><strong><?= h($f['type']) ?>:</strong> <?php endif; ?>
+                    <span class="font-medium"><?= h($f['type'] ?? 'Document') ?>:</span>
                     <?php if (!empty($f['stored_name'])): ?>
-                      <a href="<?= h($f['stored_name']) ?>" target="_blank" rel="noopener" class="text-indigo-600 hover:underline"><?= h($f['original_name'] ?? 'file') ?></a>
+                      <a href="<?= h($baseUrl . '/' . $f['stored_name']) ?>" target="_blank" rel="noopener" class="text-sky-600 hover:underline"><?= h($f['original_name'] ?? 'file') ?></a>
+                      <span class="text-xs text-gray-400">(<?= round(($f['size'] ?? 0) / 1024) ?> KB)</span>
+                      <?php
+                          $isImage = false;
+                          if (isset($f['mime']) && strpos($f['mime'], 'image/') === 0) {
+                              $isImage = true;
+                          } elseif (preg_match('/\.(jpg|jpeg|png|gif|webp)$/i', $f['original_name'] ?? '')) {
+                              $isImage = true;
+                          }
+                      ?>
+                      <?php if ($isImage): ?>
+                          <div class="mt-1 mb-2">
+                              <img src="<?= h($baseUrl . '/' . $f['stored_name']) ?>" alt="Preview" class="max-w-[200px] rounded border shadow-sm">
+                          </div>
+                      <?php endif; ?>
                     <?php else: ?>
                       <?= h($f['original_name'] ?? 'file') ?>
                     <?php endif; ?>
@@ -583,16 +603,25 @@ try {
 
                 <?php if (!empty($files)): ?>
                   <div class="mt-2"><strong>Documents:</strong>
-                    <ul class="list-disc list-inside">
+                    <ul class="list-disc list-inside text-sm text-gray-600 mt-1">
                       <?php foreach ($files as $f): ?>
                         <li>
-                          <?php if (!empty($f['type'])): ?><strong><?= h($f['type']) ?>:</strong> <?php endif; ?>
-                          <?php if (!empty($f['stored_name'])): ?>
-                            <a href="<?= h($f['stored_name']) ?>" target="_blank" rel="noopener" class="text-sky-600 hover:underline"><?= h($f['original_name'] ?? 'file') ?></a>
-                          <?php else: ?>
-                            <?= h($f['original_name'] ?? 'file') ?>
-                          <?php endif; ?>
-                          <?php if (!empty($f['size']) && is_numeric($f['size'])): ?> <span class="text-xs text-gray-400"> (<?= (int)round($f['size']/1024) ?> KB)</span><?php endif; ?>
+                          <span class="font-medium"><?= h($f['type'] ?? 'Document') ?>:</span>
+                          <a href="<?= h($baseUrl . '/' . $f['stored_name']) ?>" target="_blank" class="text-sky-600 hover:underline"><?= h($f['original_name']) ?></a>
+                          <span class="text-xs text-gray-400">(<?= round(($f['size'] ?? 0) / 1024) ?> KB)</span>
+                            <?php
+                                $isImage = false;
+                                if (isset($f['mime']) && strpos($f['mime'], 'image/') === 0) {
+                                    $isImage = true;
+                                } elseif (preg_match('/\.(jpg|jpeg|png|gif|webp)$/i', $f['original_name'] ?? '')) {
+                                    $isImage = true;
+                                }
+                            ?>
+                            <?php if ($isImage): ?>
+                                <div class="mt-1 mb-2">
+                                    <img src="<?= h($baseUrl . '/' . $f['stored_name']) ?>" alt="Preview" class="max-w-[200px] rounded border shadow-sm">
+                                </div>
+                            <?php endif; ?>
                         </li>
                       <?php endforeach; ?>
                     </ul>
