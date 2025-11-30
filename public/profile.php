@@ -43,7 +43,7 @@ $error_msg = '';
 
 // Fetch current user record
 try {
-    $stmt = $pdo->prepare("SELECT id, username, full_name, email, created_at FROM users WHERE id = ? LIMIT 1");
+    $stmt = $pdo->prepare("SELECT id, username, first_name, middle_name, last_name, email, created_at FROM users WHERE id = ? LIMIT 1");
     $stmt->execute([$user_id]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$user) {
@@ -54,7 +54,7 @@ try {
 } catch (PDOException $e) {
     error_log('Fetch user error: ' . $e->getMessage());
     $error_msg = 'Could not load profile.';
-    $user = ['username' => '', 'full_name' => '', 'email' => '', 'created_at' => ''];
+    $user = ['username' => '', 'first_name' => '', 'middle_name' => '', 'last_name' => '', 'email' => '', 'created_at' => ''];
 }
 
 // Handle form submissions
@@ -66,11 +66,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $action = $_POST['action'];
 
         if ($action === 'update_profile') {
-            $full_name = trim($_POST['full_name'] ?? '');
+            $first_name = trim($_POST['first_name'] ?? '');
+            $middle_name = trim($_POST['middle_name'] ?? '');
+            $last_name = trim($_POST['last_name'] ?? '');
             $email = trim($_POST['email'] ?? '');
 
-            if ($full_name === '' || $email === '') {
-                $error_msg = 'Full name and email are required.';
+            if ($first_name === '' || $last_name === '' || $email === '') {
+                $error_msg = 'First name, last name, and email are required.';
             } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $error_msg = 'Please enter a valid email address.';
             } else {
@@ -81,8 +83,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $error_msg = 'Email is already used by another account.';
                 } else {
                     try {
-                        $stmt = $pdo->prepare("UPDATE users SET full_name = ?, email = ? WHERE id = ?");
-                        $stmt->execute([$full_name, $email, $user_id]);
+                        $stmt = $pdo->prepare("UPDATE users SET first_name = ?, middle_name = ?, last_name = ?, email = ? WHERE id = ?");
+                        $stmt->execute([$first_name, $middle_name, $last_name, $email, $user_id]);
                         set_flash('Profile updated successfully.');
                         // refresh user data and token
                         $_SESSION['csrf_token'] = bin2hex(random_bytes(24));
@@ -220,9 +222,19 @@ try {
             <p class="text-xs text-gray-400 mt-1">Your username cannot be changed here. Contact admin if you need to change it.</p>
           </div>
 
-          <div>
-            <label for="full_name" class="block text-sm font-medium text-gray-700">Full name</label>
-            <input id="full_name" name="full_name" type="text" required value="<?= htmlspecialchars($user['full_name']) ?>" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <label for="first_name" class="block text-sm font-medium text-gray-700">First Name</label>
+              <input id="first_name" name="first_name" type="text" required value="<?= htmlspecialchars($user['first_name'] ?? '') ?>" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
+            </div>
+            <div>
+              <label for="middle_name" class="block text-sm font-medium text-gray-700">Middle Name</label>
+              <input id="middle_name" name="middle_name" type="text" value="<?= htmlspecialchars($user['middle_name'] ?? '') ?>" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
+            </div>
+            <div>
+              <label for="last_name" class="block text-sm font-medium text-gray-700">Last Name</label>
+              <input id="last_name" name="last_name" type="text" required value="<?= htmlspecialchars($user['last_name'] ?? '') ?>" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
+            </div>
           </div>
 
           <div>

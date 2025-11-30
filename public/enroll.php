@@ -14,15 +14,17 @@ if (!$user_id) {
     exit;
 }
 
-$current_user = ['full_name' => '', 'first_name' => '', 'middle_name' => '', 'last_name' => '', 'email' => ''];
+$current_user = ['first_name' => '', 'middle_name' => '', 'last_name' => '', 'email' => ''];
 try {
-    $stmt = $pdo->prepare("SELECT full_name, email FROM users WHERE id = ? LIMIT 1");
+    $stmt = $pdo->prepare("SELECT first_name, middle_name, last_name, email FROM users WHERE id = ? LIMIT 1");
     $stmt->execute([$user_id]);
     $u = $stmt->fetch(PDO::FETCH_ASSOC);
     if ($u) {
-        $current_user['full_name'] = $u['full_name'] ?? '';
+        $current_user['first_name'] = $u['first_name'] ?? '';
+        $current_user['middle_name'] = $u['middle_name'] ?? '';
+        $current_user['last_name'] = $u['last_name'] ?? '';
         $current_user['email'] = $u['email'] ?? '';
-        $parts = preg_split('/\s+/', trim($current_user['full_name']));
+        $parts = preg_split('/\s+/', trim($current_user['first_name'] . ' ' . $current_user['middle_name'] . ' ' . $current_user['last_name']));
         $current_user['first_name'] = $parts[0] ?? '';
         if (count($parts) === 1) {
             $current_user['middle_name'] = '';
@@ -692,17 +694,17 @@ function h($v) {
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700">First Name</label>
-                    <input type="text" name="student_first_name" value="<?= h($_POST['student_first_name'] ?? $current_user['first_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="Your First Name"  />
+                    <input type="text" name="student_first_name" value="<?= h($_POST['student_first_name'] ?? $current_user['first_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="Your First Name" readonly/>
                 </div>
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Middle Name</label>
-                    <input type="text" name="student_middle_name" value="<?= h($_POST['student_middle_name'] ?? $current_user['middle_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Middle Name (optional)" />
+                    <input type="text" name="student_middle_name" value="<?= h($_POST['student_middle_name'] ?? $current_user['middle_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Middle Name (optional)" readonly/>
                 </div>
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Last Name</label>
-                    <input type="text" name="student_last_name" value="<?= h($_POST['student_last_name'] ?? $current_user['last_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="Your Last Name" />
+                    <input type="text" name="student_last_name" value="<?= h($_POST['student_last_name'] ?? $current_user['last_name']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="Your Last Name" readonly/>
                 </div>
 
                 <div>
@@ -741,7 +743,7 @@ function h($v) {
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Email Address</label>
-                    <input type="email" name="student_email" value="<?= h($_POST['student_email'] ?? $current_user['email']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="name@example.com"  />
+                    <input type="email" name="student_email" value="<?= h($_POST['student_email'] ?? $current_user['email']) ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required placeholder="name@example.com"  readonly/>
                 </div>
             </div>
 

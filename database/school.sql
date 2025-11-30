@@ -108,7 +108,9 @@ CREATE TABLE `users` (
   `id` int(11) NOT NULL,
   `username` varchar(50) NOT NULL,
   `password` varchar(255) NOT NULL,
-  `full_name` varchar(255) DEFAULT NULL,
+  `first_name` varchar(100) DEFAULT NULL,
+  `middle_name` varchar(100) DEFAULT NULL,
+  `last_name` varchar(100) DEFAULT NULL,
   `email` varchar(255) NOT NULL,
   `role` enum('student','admin') NOT NULL DEFAULT 'student',
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
@@ -118,9 +120,9 @@ CREATE TABLE `users` (
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`id`, `username`, `password`, `full_name`, `email`, `role`, `created_at`) VALUES
-(6, 'Admin', '$2y$10$fXQZODJly.pabqtE./qS.u.jl1bDNO9V5UX7cZo.5uY33HTFj0pDu', 'Admin Example', 'admin@example.com', 'admin', '2025-11-15 04:02:36'),
-(7, 'Student', '$2y$10$fdD7ZbXOVxAbmN.sfoJdv.AQd7Pm7I5Qw33X2LYEbHPKnIQhtMzzi', 'Crisjan C. Poliquit', 'student@example.com', 'student', '2025-11-15 04:03:39');
+INSERT INTO `users` (`id`, `username`, `password`, `first_name`, `middle_name`, `last_name`, `email`, `role`, `created_at`) VALUES
+(6, 'Admin', '$2y$10$fXQZODJly.pabqtE./qS.u.jl1bDNO9V5UX7cZo.5uY33HTFj0pDu', 'Admin', NULL, 'Example', 'admin@example.com', 'admin', '2025-11-15 04:02:36'),
+(7, 'Student', '$2y$10$fdD7ZbXOVxAbmN.sfoJdv.AQd7Pm7I5Qw33X2LYEbHPKnIQhtMzzi', 'Crisjan', 'C.', 'Poliquit', 'student@example.com', 'student', '2025-11-15 04:03:39');
 
 --
 -- Indexes for dumped tables

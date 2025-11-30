@@ -17,7 +17,9 @@ $csrf_token = $_SESSION['csrf_token'];
 $errors = [];
 $old = [
     'username' => '',
-    'full_name' => '',
+    'first_name' => '',
+    'middle_name' => '',
+    'last_name' => '',
     'email' => ''
 ];
 $info_msg = '';
@@ -35,22 +37,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         // Collect and trim inputs
         $username   = trim($_POST['username'] ?? '');
-        $full_name  = trim($_POST['full_name'] ?? '');
+        $first_name = trim($_POST['first_name'] ?? '');
+        $middle_name = trim($_POST['middle_name'] ?? '');
+        $last_name  = trim($_POST['last_name'] ?? '');
         $email      = trim($_POST['email'] ?? '');
         $password   = $_POST['password'] ?? '';
         $password2  = $_POST['password_confirm'] ?? '';
 
         $old['username'] = htmlspecialchars($username, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $old['full_name'] = htmlspecialchars($full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $old['first_name'] = htmlspecialchars($first_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $old['middle_name'] = htmlspecialchars($middle_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $old['last_name'] = htmlspecialchars($last_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $old['email'] = htmlspecialchars($email, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
         // Validation
         if ($username === '' || !preg_match('/^[A-Za-z0-9._-]{3,30}$/', $username)) {
             $errors[] = "Username is required and must be 3-30 characters (letters, numbers, dot, underscore, hyphen).";
         }
-        if ($full_name === '' || mb_strlen($full_name) < 2) {
-            $errors[] = "Please enter your full name.";
+        if ($first_name === '' || mb_strlen($first_name) < 2) {
+            $errors[] = "Please enter your first name.";
         }
+        if ($last_name === '' || mb_strlen($last_name) < 2) {
+            $errors[] = "Please enter your last name.";
+        }
+
+        // Construct full name
+        $name_parts = array_filter([$first_name, $middle_name, $last_name], fn($v) => $v !== '');
+        $full_name = implode(' ', $name_parts);
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $errors[] = "Please enter a valid email address.";
         }
@@ -73,8 +86,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Hash password and insert
                     $hash = password_hash($password, PASSWORD_DEFAULT);
                     $role = 'student';
-                    $stmt = $pdo->prepare("INSERT INTO users (username, password, full_name, email, role) VALUES (?, ?, ?, ?, ?)");
-                    $ok = $stmt->execute([$username, $hash, $full_name, $email, $role]);
+                    $stmt = $pdo->prepare("INSERT INTO users (username, password, first_name, middle_name, last_name, full_name, email, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                    $ok = $stmt->execute([$username, $hash, $first_name, $middle_name, $last_name, $full_name, $email, $role]);
                     if ($ok) {
                         $_SESSION['flash'] = "Registration successful! Please sign in.";
                         header('Location: login.php');
@@ -173,12 +186,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="mt-1 text-xs text-gray-400">3–30 characters: letters, numbers, dots, underscores or hyphens.</p>
           </div>
 
-          <div>
-            <label for="full_name" class="block text-sm font-medium text-gray-700">Full name</label>
-            <div class="mt-1">
-              <input id="full_name" name="full_name" type="text" required
-                     value="<?= $old['full_name'] ?>"
-                     class="block w-full rounded-md border-gray-300 shadow-sm focus:ring-sky-500 focus:border-sky-500 sm:text-sm px-3 py-2" />
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <label for="first_name" class="block text-sm font-medium text-gray-700">First Name</label>
+              <div class="mt-1">
+                <input id="first_name" name="first_name" type="text" required
+                       value="<?= $old['first_name'] ?>"
+                       class="block w-full rounded-md border-gray-300 shadow-sm focus:ring-sky-500 focus:border-sky-500 sm:text-sm px-3 py-2" />
+              </div>
+            </div>
+            <div>
+              <label for="middle_name" class="block text-sm font-medium text-gray-700">Middle Name</label>
+              <div class="mt-1">
+                <input id="middle_name" name="middle_name" type="text"
+                       value="<?= $old['middle_name'] ?>"
+                       class="block w-full rounded-md border-gray-300 shadow-sm focus:ring-sky-500 focus:border-sky-500 sm:text-sm px-3 py-2" />
+              </div>
+            </div>
+            <div>
+              <label for="last_name" class="block text-sm font-medium text-gray-700">Last Name</label>
+              <div class="mt-1">
+                <input id="last_name" name="last_name" type="text" required
+                       value="<?= $old['last_name'] ?>"
+                       class="block w-full rounded-md border-gray-300 shadow-sm focus:ring-sky-500 focus:border-sky-500 sm:text-sm px-3 py-2" />
+              </div>
             </div>
           </div>
 
