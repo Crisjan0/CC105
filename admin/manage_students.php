@@ -61,12 +61,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         if ($action === 'add') {
             // Create a new student account
             $username = trim($_POST['username'] ?? '');
-            $full_name = trim($_POST['full_name'] ?? '');
+            $first_name = trim($_POST['first_name'] ?? '');
+            $middle_name = trim($_POST['middle_name'] ?? '');
+            $last_name = trim($_POST['last_name'] ?? '');
             $email = trim($_POST['email'] ?? '');
             $password_plain = trim($_POST['password'] ?? '');
 
-            if ($username === '' || $full_name === '' || $email === '') {
-                $error_msg = 'Please provide username, full name and email.';
+            if ($username === '' || $first_name === '' || $last_name === '' || $email === '') {
+                $error_msg = 'Please provide username, first name, last name and email.';
             } else {
                 // Check uniqueness
                 $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
@@ -79,8 +81,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
                     $hash = password_hash($password_plain, PASSWORD_DEFAULT);
                     $role = 'student';
-                    $stmt = $pdo->prepare("INSERT INTO users (username, password, full_name, email, role, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
-                    if ($stmt->execute([$username, $hash, $full_name, $email, $role])) {
+                    $stmt = $pdo->prepare("INSERT INTO users (username, password, first_name, middle_name, last_name, email, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+                    if ($stmt->execute([$username, $hash, $first_name, $middle_name, $last_name, $email, $role])) {
                         // Use flash to display temporary password securely after redirect
                         set_flash("Student created. Temporary password: " . $password_plain);
                         header('Location: manage_students.php');
@@ -96,10 +98,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             // Update student details (not password here)
             $id = intval($_POST['id'] ?? 0);
             $username = trim($_POST['username'] ?? '');
-            $full_name = trim($_POST['full_name'] ?? '');
+            $first_name = trim($_POST['first_name'] ?? '');
+            $middle_name = trim($_POST['middle_name'] ?? '');
+            $last_name = trim($_POST['last_name'] ?? '');
             $email = trim($_POST['email'] ?? '');
 
-            if ($id <= 0 || $username === '' || $full_name === '' || $email === '') {
+            if ($id <= 0 || $username === '' || $first_name === '' || $last_name === '' || $email === '') {
                 $error_msg = 'Invalid input for update.';
             } else {
                 // Ensure username/email uniqueness (excluding current user)
@@ -108,8 +112,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if ($stmt->fetch()) {
                     $error_msg = 'Another account with that username or email already exists.';
                 } else {
-                    $stmt = $pdo->prepare("UPDATE users SET username = ?, full_name = ?, email = ? WHERE id = ?");
-                    if ($stmt->execute([$username, $full_name, $email, $id])) {
+                    $stmt = $pdo->prepare("UPDATE users SET username = ?, first_name = ?, middle_name = ?, last_name = ?, email = ? WHERE id = ?");
+                    if ($stmt->execute([$username, $first_name, $middle_name, $last_name, $email, $id])) {
                         set_flash('Student updated successfully.');
                         header('Location: manage_students.php');
                         exit;
@@ -158,10 +162,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
         elseif ($action === 'delete') {
-            // Delete user only if no enrollments exist
+            // Delete user
             $id = intval($_POST['id'] ?? 0);
             if ($id <= 0) {
-                $error_msg = 'Invalid user id.';
+                $raw_id = $_POST['id'] ?? 'NULL';
+                $error_msg = "Invalid user id (received: " . htmlspecialchars($raw_id) . ").";
             } else {
                 // Prevent deleting other admins by accident
                 $stmt = $pdo->prepare("SELECT role FROM users WHERE id = ?");
@@ -172,20 +177,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 } elseif ($row['role'] === 'admin') {
                     $error_msg = 'Cannot delete an admin account.';
                 } else {
-                    $stmt = $pdo->prepare("SELECT COUNT(*) FROM enrollments WHERE user_id = ?");
-                    $stmt->execute([$id]);
-                    $count = (int)$stmt->fetchColumn();
-                    if ($count > 0) {
-                        $error_msg = 'Cannot delete user: there are enrollments. Remove enrollments first.';
+                    // Database is configured with ON DELETE CASCADE for enrollments, payments, etc.
+                    // So we can just delete the user.
+                    $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+                    if ($stmt->execute([$id])) {
+                        set_flash('User deleted successfully.');
+                        header('Location: manage_students.php');
+                        exit;
                     } else {
-                        $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
-                        if ($stmt->execute([$id])) {
-                            set_flash('User deleted successfully.');
-                            header('Location: manage_students.php');
-                            exit;
-                        } else {
-                            $error_msg = 'Failed to delete user.';
-                        }
+                        $error_msg = 'Failed to delete user.';
                     }
                 }
             }
@@ -314,8 +314,18 @@ if (isset($_GET['edit_id'])) {
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700">Full Name</label>
-              <input name="full_name" type="text" required value="<?= htmlspecialchars($edit_user['full_name']) ?>" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
+              <label class="block text-sm font-medium text-gray-700">First Name</label>
+              <input name="first_name" type="text" required value="<?= htmlspecialchars($edit_user['first_name']) ?>" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Middle Name</label>
+              <input name="middle_name" type="text" value="<?= htmlspecialchars($edit_user['middle_name'] ?? '') ?>" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Last Name</label>
+              <input name="last_name" type="text" required value="<?= htmlspecialchars($edit_user['last_name']) ?>" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
             </div>
 
             <div>
@@ -340,8 +350,18 @@ if (isset($_GET['edit_id'])) {
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700">Full Name</label>
-              <input name="full_name" type="text" required class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
+              <label class="block text-sm font-medium text-gray-700">First Name</label>
+              <input name="first_name" type="text" required class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Middle Name</label>
+              <input name="middle_name" type="text" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Last Name</label>
+              <input name="last_name" type="text" required class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
             </div>
 
             <div>
@@ -390,7 +410,7 @@ if (isset($_GET['edit_id'])) {
                 <tr>
                   <td class="px-4 py-3 text-sm text-gray-700"><?= (int)$u['id'] ?></td>
                   <td class="px-4 py-3 text-sm text-gray-700"><?= htmlspecialchars($u['username']) ?></td>
-                  <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars($u['full_name']) ?></td>
+                  <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars(trim($u['first_name'] . ' ' . ($u['middle_name'] ? $u['middle_name'] . ' ' : '') . $u['last_name'])) ?></td>
                   <td class="px-4 py-3 text-sm text-gray-700"><?= htmlspecialchars($u['email']) ?></td>
                   <td class="px-4 py-3 text-sm text-gray-700"><?= htmlspecialchars($u['role']) ?></td>
                   <td class="px-4 py-3 text-sm text-gray-500"><?= htmlspecialchars($u['created_at']) ?></td>

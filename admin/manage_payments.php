@@ -91,7 +91,7 @@ $search = trim($_GET['search'] ?? '');
 $view_id = isset($_GET['view_id']) ? intval($_GET['view_id']) : 0;
 
 // Build query with joins and optional filters
-$sql = "SELECT p.*, u.username, u.full_name, u.email
+$sql = "SELECT p.*, u.username, u.first_name, u.middle_name, u.last_name, u.email
         FROM payments p
         JOIN users u ON p.user_id = u.id";
 $where = [];
@@ -103,9 +103,10 @@ if ($status_filter !== '' && in_array($status_filter, $allowed_statuses, true)) 
 }
 
 if ($search !== '') {
-    // search by username, full_name, email or transaction_id
-    $where[] = "(u.username LIKE ? OR u.full_name LIKE ? OR u.email LIKE ? OR p.transaction_id LIKE ?)";
+    // search by username, first_name, last_name, email or transaction_id
+    $where[] = "(u.username LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ? OR p.transaction_id LIKE ?)";
     $like = '%' . $search . '%';
+    $params[] = $like;
     $params[] = $like;
     $params[] = $like;
     $params[] = $like;
@@ -259,7 +260,7 @@ $payments = $stmt->fetchAll();
               <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700"><?= (int)$p['id'] ?></td>
               <td class="px-4 py-4 whitespace-nowrap">
                 <div class="text-sm font-medium text-gray-900"><?= htmlspecialchars($p['username']) ?></div>
-                <div class="text-sm text-gray-500"><?= htmlspecialchars($p['full_name']) ?></div>
+                <div class="text-sm text-gray-500"><?= htmlspecialchars(trim($p['first_name'] . ' ' . ($p['middle_name'] ? $p['middle_name'] . ' ' : '') . $p['last_name'])) ?></div>
               </td>
               <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700"><?= htmlspecialchars($p['email']) ?></td>
               <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-900 text-right"><?= number_format((float)$p['amount'], 2) ?></td>
@@ -303,7 +304,7 @@ $payments = $stmt->fetchAll();
 
             <?php if ($view_id === (int)$p['id']): 
                 // fetch full payment row (including any fields like notes if available)
-                $stmtD = $pdo->prepare("SELECT p.*, u.username, u.full_name, u.email FROM payments p JOIN users u ON p.user_id = u.id WHERE p.id = ?");
+                $stmtD = $pdo->prepare("SELECT p.*, u.username, u.first_name, u.middle_name, u.last_name, u.email FROM payments p JOIN users u ON p.user_id = u.id WHERE p.id = ?");
                 $stmtD->execute([(int)$p['id']]);
                 $detail = $stmtD->fetch();
             ?>
@@ -313,7 +314,7 @@ $payments = $stmt->fetchAll();
                   <div class="flex items-center justify-between">
                     <div>
                       <div class="text-sm text-gray-700"><strong>Payment Details (ID <?= (int)$p['id'] ?>)</strong></div>
-                      <div class="text-sm text-gray-600">User: <?= htmlspecialchars($detail['username']) ?> (<?= htmlspecialchars($detail['full_name']) ?>) — <?= htmlspecialchars($detail['email']) ?></div>
+                      <div class="text-sm text-gray-600">User: <?= htmlspecialchars($detail['username']) ?> (<?= htmlspecialchars(trim($detail['first_name'] . ' ' . ($detail['middle_name'] ? $detail['middle_name'] . ' ' : '') . $detail['last_name'])) ?>) — <?= htmlspecialchars($detail['email']) ?></div>
                     </div>
                     <div class="text-sm text-gray-500">Recorded: <?= htmlspecialchars($detail['payment_date']) ?></div>
                   </div>

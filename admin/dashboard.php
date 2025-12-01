@@ -28,11 +28,12 @@ if (!empty($_SESSION['user']['name'])) {
     $adminName = htmlspecialchars($_SESSION['username']);
 } elseif (!empty($_SESSION['user_id']) && isset($pdo) && $pdo instanceof PDO) {
     try {
-        $stmt = $pdo->prepare("SELECT full_name, username FROM users WHERE id = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT first_name, middle_name, last_name, username FROM users WHERE id = ? LIMIT 1");
         $stmt->execute([(int)$_SESSION['user_id']]);
         $r = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($r) {
-            $adminName = htmlspecialchars($r['full_name'] ?: $r['username']);
+            $fullName = trim($r['first_name'] . ' ' . ($r['middle_name'] ? $r['middle_name'] . ' ' : '') . $r['last_name']);
+            $adminName = htmlspecialchars($fullName ?: $r['username']);
         }
     } catch (Throwable $e) {
         // ignore and continue with blank adminName
@@ -76,10 +77,7 @@ $activeCoursesQueries = [
     "SELECT COUNT(*) FROM courses WHERE IFNULL(active,1)=1"
 ];
 
-$enrolledStudentsQueries = [
-    // our app stores enrollments.user_id
-    "SELECT COUNT(DISTINCT user_id) FROM enrollments",
-    // fallback to users table if enrollments missing
+$studentCountQueries = [
     "SELECT COUNT(*) FROM users WHERE role = 'student'"
 ];
 
@@ -102,7 +100,7 @@ $submittedApplicationsQueries = [
 
 // run counts
 $activeCourses = try_count($activeCoursesQueries);
-$enrolledStudents = try_count($enrolledStudentsQueries);
+$studentCount = try_count($studentCountQueries);
 $pendingPayments = try_count($pendingPaymentsQueries);
 $completedPayments = try_count($completedPaymentsQueries);
 $submittedApplications = try_count($submittedApplicationsQueries);
@@ -307,7 +305,7 @@ function render_count($v) {
           </div>
           <div class="p-4 bg-gray-50 rounded">
             <p class="text-sm text-gray-500">Students</p>
-            <p class="mt-2 text-2xl font-semibold text-gray-900"><?php echo render_count($enrolledStudents); ?></p>
+            <p class="mt-2 text-2xl font-semibold text-gray-900"><?php echo render_count($studentCount); ?></p>
           </div>
           <div class="p-4 bg-gray-50 rounded">
             <p class="text-sm text-gray-500">Pending Payments</p>

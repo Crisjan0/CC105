@@ -203,7 +203,7 @@ $view_app = null;
 $view_id = isset($_GET['view_id']) ? (int)$_GET['view_id'] : 0;
 if ($view_id > 0) {
     try {
-        $stmtV = $pdo->prepare("SELECT ea.*, u.username, u.full_name, u.email FROM enrollment_applications ea LEFT JOIN users u ON ea.user_id = u.id WHERE ea.id = ? LIMIT 1");
+        $stmtV = $pdo->prepare("SELECT ea.*, u.username, u.first_name, u.middle_name, u.last_name, u.email FROM enrollment_applications ea LEFT JOIN users u ON ea.user_id = u.id WHERE ea.id = ? LIMIT 1");
         $stmtV->execute([$view_id]);
         $view_app = $stmtV->fetch(PDO::FETCH_ASSOC) ?: null;
         if ($view_app) {
@@ -215,10 +215,13 @@ if ($view_id > 0) {
             // fetch processed_by name if present
             $view_app['processed_by_name'] = null;
             if (!empty($view_app['processed_by'])) {
-                $stmtPB = $pdo->prepare("SELECT username, full_name FROM users WHERE id = ? LIMIT 1");
+                $stmtPB = $pdo->prepare("SELECT username, first_name, middle_name, last_name FROM users WHERE id = ? LIMIT 1");
                 $stmtPB->execute([(int)$view_app['processed_by']]);
                 $pb = $stmtPB->fetch(PDO::FETCH_ASSOC);
-                if ($pb) $view_app['processed_by_name'] = $pb['full_name'] ?: $pb['username'];
+                if ($pb) {
+                    $pbName = trim($pb['first_name'] . ' ' . ($pb['middle_name'] ? $pb['middle_name'] . ' ' : '') . $pb['last_name']);
+                    $view_app['processed_by_name'] = $pbName ?: $pb['username'];
+                }
             }
         }
     } catch (Exception $e) {
@@ -234,7 +237,7 @@ $filter_user = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
 // Fetch applications (filter by user if requested). Show all statuses when filtered by user.
 try {
     if ($filter_user > 0) {
-        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, ea.student_info, ea.parent_info, ea.files, ea.course_ids, ea.notes, u.username, u.full_name
+        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, ea.student_info, ea.parent_info, ea.files, ea.course_ids, ea.notes, u.username, u.first_name, u.middle_name, u.last_name
                                FROM enrollment_applications ea
                                LEFT JOIN users u ON ea.user_id = u.id
                                WHERE ea.user_id = ?
@@ -242,7 +245,7 @@ try {
         $stmt->execute([$filter_user]);
     } else {
         // Default: show submitted applications first
-        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, ea.student_info, ea.parent_info, ea.files, ea.course_ids, ea.notes, u.username, u.full_name
+        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, ea.student_info, ea.parent_info, ea.files, ea.course_ids, ea.notes, u.username, u.first_name, u.middle_name, u.last_name
                                FROM enrollment_applications ea
                                LEFT JOIN users u ON ea.user_id = u.id
                                ORDER BY ea.submitted_at DESC");
@@ -304,7 +307,10 @@ try {
           <?php
             // show student's name if available (take from first application if present)
             $studentName = '';
-            foreach ($applications as $a) { if (!empty($a['full_name'])) { $studentName = $a['full_name']; break; } }
+            foreach ($applications as $a) {
+                $name = trim(($a['first_name'] ?? '') . ' ' . ($a['middle_name'] ? $a['middle_name'] . ' ' : '') . ($a['last_name'] ?? ''));
+                if (!empty($name)) { $studentName = $name; break; }
+            }
           ?>
           <div class="text-sm text-gray-500">Showing all applications for <?= $studentName ? h($studentName) : 'student ID ' . (int)$filter_user ?> — <a href="manage_applications.php" class="text-sky-600 hover:underline">clear filter</a></div>
         <?php else: ?>
@@ -326,7 +332,10 @@ try {
         <div class="flex items-start justify-between">
           <div>
             <div class="text-sm text-gray-500">Application #<?= (int)$view_app['id'] ?> · Submitted: <?= h($view_app['submitted_at']) ?></div>
-            <h2 class="text-xl font-semibold mt-1"><?= h($view_app['student_info']['first_name'] ?? $view_app['full_name'] ?? $view_app['username'] ?? 'Unknown') ?> <?= h($view_app['student_info']['last_name'] ?? '') ?></h2>
+            <?php
+                $viewName = trim(($view_app['first_name'] ?? '') . ' ' . ($view_app['middle_name'] ? $view_app['middle_name'] . ' ' : '') . ($view_app['last_name'] ?? ''));
+            ?>
+            <h2 class="text-xl font-semibold mt-1"><?= h($view_app['student_info']['first_name'] ?? $viewName ?: $view_app['username'] ?? 'Unknown') ?> <?= h($view_app['student_info']['last_name'] ?? '') ?></h2>
             <div class="text-sm text-gray-600 mt-1"><?= h($view_app['student_info']['email'] ?? $view_app['email'] ?? '') ?></div>
           </div>
 
@@ -468,7 +477,7 @@ try {
         <div class="space-y-4">
           <?php
             // Prepare a small statement to resolve processed_by -> name for list entries
-            $userStmt = $pdo->prepare("SELECT full_name, username FROM users WHERE id = ? LIMIT 1");
+            $userStmt = $pdo->prepare("SELECT first_name, middle_name, last_name, username FROM users WHERE id = ? LIMIT 1");
           ?>
           <?php foreach ($applications as $app): ?>
             <?php
@@ -482,7 +491,10 @@ try {
                   try {
                       $userStmt->execute([(int)$app['processed_by']]);
                       $u = $userStmt->fetch(PDO::FETCH_ASSOC);
-                      if ($u) $processed_by_display = $u['full_name'] ?: $u['username'];
+                      if ($u) {
+                          $uName = trim($u['first_name'] . ' ' . ($u['middle_name'] ? $u['middle_name'] . ' ' : '') . $u['last_name']);
+                          $processed_by_display = $uName ?: $u['username'];
+                      }
                   } catch (Throwable $ignore) {}
               }
             ?>

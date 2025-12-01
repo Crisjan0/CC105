@@ -86,8 +86,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // Hash password and insert
                     $hash = password_hash($password, PASSWORD_DEFAULT);
                     $role = 'student';
-                    $stmt = $pdo->prepare("INSERT INTO users (username, password, first_name, middle_name, last_name, full_name, email, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                    $ok = $stmt->execute([$username, $hash, $first_name, $middle_name, $last_name, $full_name, $email, $role]);
+                    $stmt = $pdo->prepare("INSERT INTO users (username, password, first_name, middle_name, last_name, email, role) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                    $ok = $stmt->execute([$username, $hash, $first_name, $middle_name, $last_name, $email, $role]);
                     if ($ok) {
                         $_SESSION['flash'] = "Registration successful! Please sign in.";
                         header('Location: login.php');
