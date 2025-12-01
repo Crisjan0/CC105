@@ -869,7 +869,7 @@ function h($v) {
             </div>
         </div>
 
-        <div class="flex items-center justify-end space-x-3">
+        <div class="flex items-center justify-start space-x-3">
           <button type="submit" class="inline-flex items-center px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700">Submit Application</button>
           <a href="dashboard.php" class="text-sm text-gray-600 hover:underline">Cancel</a>
         </div>
