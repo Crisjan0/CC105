@@ -70,6 +70,7 @@ CREATE TABLE `enrollment_applications` (
   `id` int(11) NOT NULL,
   `user_id` int(11) NOT NULL,
   `course_ids` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`course_ids`)),
+  `year_level` varchar(20) DEFAULT NULL,
   `notes` text DEFAULT NULL,
   `files` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`files`)),
   `parent_info` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`parent_info`)),

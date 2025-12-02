@@ -40,17 +40,6 @@ $error_msg = '';
 // Show flash if present (e.g. temp password info)
 $info_msg = get_flash();
 
-// Helper: generate a random temporary password
-function generate_temp_password($len = 12) {
-    $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+';
-    $max = strlen($chars) - 1;
-    $pw = '';
-    for ($i = 0; $i < $len; $i++) {
-        $pw .= $chars[random_int(0, $max)];
-    }
-    return $pw;
-}
-
 // Handle form submissions (with CSRF)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if (empty($_POST['csrf_token']) || !hash_equals($csrf_token, $_POST['csrf_token'])) {
@@ -124,43 +113,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
         }
 
-        elseif ($action === 'promote') {
-            // Promote user to admin
-            $id = intval($_POST['id'] ?? 0);
-            if ($id <= 0) {
-                $error_msg = 'Invalid user id.';
-            } else {
-                $stmt = $pdo->prepare("UPDATE users SET role = 'admin' WHERE id = ?");
-                if ($stmt->execute([$id])) {
-                    set_flash('User promoted to admin.');
-                    header('Location: manage_students.php');
-                    exit;
-                } else {
-                    $error_msg = 'Failed to promote user.';
-                }
-            }
-        }
-
-        elseif ($action === 'reset_password') {
-            // Generate a temporary password and update the user's hash
-            $id = intval($_POST['id'] ?? 0);
-            if ($id <= 0) {
-                $error_msg = 'Invalid user id.';
-            } else {
-                $temp_pw = generate_temp_password(10);
-                $hash = password_hash($temp_pw, PASSWORD_DEFAULT);
-                $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
-                if ($stmt->execute([$hash, $id])) {
-                    // pass the temp password back via flash (visible only to admin)
-                    set_flash("Password reset. Temporary password: " . $temp_pw);
-                    header('Location: manage_students.php');
-                    exit;
-                } else {
-                    $error_msg = 'Failed to reset password.';
-                }
-            }
-        }
-
         elseif ($action === 'delete') {
             // Delete user
             $id = intval($_POST['id'] ?? 0);
@@ -197,10 +149,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 // Fetch user list (students and optionally admins)
 $filter = $_GET['filter'] ?? 'students'; // 'students' or 'all'
 if ($filter === 'all') {
-    $stmt = $pdo->query("SELECT * FROM users ORDER BY created_at DESC");
+    $stmt = $pdo->query("SELECT u.*, (SELECT COUNT(*) FROM enrollment_applications ea WHERE ea.user_id = u.id AND ea.status = 'approved') as is_enrolled FROM users u ORDER BY u.created_at DESC");
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } else {
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE role = 'student' ORDER BY created_at DESC");
+    $stmt = $pdo->prepare("SELECT u.*, (SELECT COUNT(*) FROM enrollment_applications ea WHERE ea.user_id = u.id AND ea.status = 'approved') as is_enrolled FROM users u WHERE u.role = 'student' ORDER BY u.created_at DESC");
     $stmt->execute();
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
@@ -299,9 +251,9 @@ if (isset($_GET['edit_id'])) {
       </p>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 <?= $edit_user ? 'lg:grid-cols-3' : '' ?> gap-6">
+      <?php if ($edit_user): ?>
       <div class="lg:col-span-1 bg-white shadow rounded-lg p-6">
-        <?php if ($edit_user): ?>
           <h2 class="text-lg font-medium text-gray-900 mb-4">Edit User</h2>
           <form method="post" class="space-y-4">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
@@ -338,51 +290,10 @@ if (isset($_GET['edit_id'])) {
               <a href="manage_students.php" class="text-sm text-gray-600 hover:underline">Cancel</a>
             </div>
           </form>
-        <?php else: ?>
-          <h2 class="text-lg font-medium text-gray-900 mb-4">Add Student</h2>
-          <form method="post" class="space-y-4">
-            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
-            <input type="hidden" name="action" value="add">
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Username</label>
-              <input name="username" type="text" required class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700">First Name</label>
-              <input name="first_name" type="text" required class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Middle Name</label>
-              <input name="middle_name" type="text" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Last Name</label>
-              <input name="last_name" type="text" required class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Email</label>
-              <input name="email" type="email" required class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-gray-700">Password (optional)</label>
-              <input name="password" type="text" placeholder="Leave blank to auto-generate" class="mt-1 block w-full rounded-md border-gray-300 px-3 py-2" />
-              <p class="text-xs text-gray-400 mt-1">If left blank a temporary password will be generated and shown to the admin after creation.</p>
-            </div>
-
-            <div>
-              <button type="submit" class="w-full inline-flex justify-center items-center px-4 py-2 bg-sky-600 text-white rounded-md text-sm hover:bg-sky-700">Create Student</button>
-            </div>
-          </form>
-        <?php endif; ?>
       </div>
+      <?php endif; ?>
 
-      <div class="lg:col-span-2 bg-white shadow rounded-lg p-6 overflow-x-auto">
+      <div class="<?= $edit_user ? 'lg:col-span-2' : 'w-full' ?> bg-white shadow rounded-lg p-6 overflow-x-auto">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-lg font-medium text-gray-900">Users <span class="text-sm text-gray-500">(<?= count($users) ?>)</span></h2>
           <div class="text-sm text-gray-500">Tip: Use the actions to manage accounts.</div>
@@ -400,6 +311,7 @@ if (isset($_GET['edit_id'])) {
                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Full name</th>
                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
                 <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -412,26 +324,19 @@ if (isset($_GET['edit_id'])) {
                   <td class="px-4 py-3 text-sm text-gray-700"><?= htmlspecialchars($u['username']) ?></td>
                   <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars(trim($u['first_name'] . ' ' . ($u['middle_name'] ? $u['middle_name'] . ' ' : '') . $u['last_name'])) ?></td>
                   <td class="px-4 py-3 text-sm text-gray-700"><?= htmlspecialchars($u['email']) ?></td>
+                  <td class="px-4 py-3 text-sm">
+                    <?php if (!empty($u['is_enrolled']) && $u['is_enrolled'] > 0): ?>
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Enrolled</span>
+                    <?php else: ?>
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">Not Enrolled</span>
+                    <?php endif; ?>
+                  </td>
                   <td class="px-4 py-3 text-sm text-gray-700"><?= htmlspecialchars($u['role']) ?></td>
                   <td class="px-4 py-3 text-sm text-gray-500"><?= htmlspecialchars($u['created_at']) ?></td>
                   <td class="px-4 py-3 text-sm text-right space-x-2">
                     <a href="manage_students.php?edit_id=<?= (int)$u['id'] ?>" class="inline-flex items-center px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200">Edit</a>
 
                     <?php if ($u['role'] !== 'admin'): ?>
-                      <form method="post" class="inline-block">
-                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
-                        <input type="hidden" name="action" value="promote">
-                        <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
-                        <button type="submit" onclick="return confirm('Promote this user to admin?');" class="inline-flex px-3 py-1 text-sm rounded bg-yellow-500 text-white hover:bg-yellow-600">Promote</button>
-                      </form>
-
-                      <form method="post" class="inline-block">
-                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
-                        <input type="hidden" name="action" value="reset_password">
-                        <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
-                        <button type="submit" onclick="return confirm('Reset password for this user? A temporary password will be generated.');" class="inline-flex px-3 py-1 text-sm rounded bg-sky-600 text-white hover:bg-sky-700">Reset password</button>
-                      </form>
-
                       <form method="post" class="inline-block" onsubmit="return confirm('Delete this user? This cannot be undone.');">
                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
                         <input type="hidden" name="action" value="delete">
@@ -451,7 +356,7 @@ if (isset($_GET['edit_id'])) {
     </div>
 
     <div class="mt-6 text-sm text-gray-500">
-      Tip: Use "Reset password" to generate a temporary password for the user. For production, deliver password resets via email rather than showing plaintext.
+      Tip: Use the actions to manage accounts.
     </div>
   </main>
 

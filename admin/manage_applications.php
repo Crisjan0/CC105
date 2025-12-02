@@ -237,7 +237,7 @@ $filter_user = isset($_GET['user_id']) ? (int)$_GET['user_id'] : 0;
 // Fetch applications (filter by user if requested). Show all statuses when filtered by user.
 try {
     if ($filter_user > 0) {
-        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, ea.student_info, ea.parent_info, ea.files, ea.course_ids, ea.notes, u.username, u.first_name, u.middle_name, u.last_name
+        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, ea.student_info, ea.parent_info, ea.files, ea.course_ids, ea.year_level, ea.notes, u.username, u.first_name, u.middle_name, u.last_name
                                FROM enrollment_applications ea
                                LEFT JOIN users u ON ea.user_id = u.id
                                WHERE ea.user_id = ?
@@ -245,7 +245,7 @@ try {
         $stmt->execute([$filter_user]);
     } else {
         // Default: show submitted applications first
-        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, ea.student_info, ea.parent_info, ea.files, ea.course_ids, ea.notes, u.username, u.first_name, u.middle_name, u.last_name
+        $stmt = $pdo->prepare("SELECT ea.id, ea.user_id, ea.submitted_at, ea.status, ea.processed_at, ea.processed_by, ea.student_info, ea.parent_info, ea.files, ea.course_ids, ea.year_level, ea.notes, u.username, u.first_name, u.middle_name, u.last_name
                                FROM enrollment_applications ea
                                LEFT JOIN users u ON ea.user_id = u.id
                                ORDER BY ea.submitted_at DESC");
@@ -588,6 +588,8 @@ try {
                     <?= $labels ? implode(', ', $labels) : '<span class="text-gray-500">None</span>' ?>
                   <?php endif; ?>
                 </div>
+
+                <div class="mt-2"><strong>Year Level:</strong> <?= h($app['year_level'] ?? $student_info['year_level'] ?? '—') ?></div>
 
                 <?php if (!empty($app['notes'])): ?>
                   <div class="mt-2"><strong>Notes:</strong> <?= h($app['notes']) ?></div>

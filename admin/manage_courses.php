@@ -91,9 +91,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             } else {
                 try {
                     // Optional: prevent delete if enrollments exist
-                    $stmt = $pdo->prepare("SELECT COUNT(*) AS cnt FROM enrollments WHERE course_id = ?");
-                    $stmt->execute([$id]);
-                    $count = (int)$stmt->fetchColumn();
+                    $count = 0;
+                    try {
+                        $stmt = $pdo->prepare("SELECT COUNT(*) AS cnt FROM enrollments WHERE course_id = ?");
+                        $stmt->execute([$id]);
+                        $count = (int)$stmt->fetchColumn();
+                    } catch (PDOException $e) {
+                        // If table doesn't exist (42S02), ignore and proceed
+                        if ($e->getCode() !== '42S02') {
+                            throw $e;
+                        }
+                    }
+
                     if ($count > 0) {
                         $error_msg = 'Cannot delete course: there are enrolled students. Remove enrollments first.';
                     } else {

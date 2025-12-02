@@ -100,6 +100,19 @@ function compute_age($birth_date) {
     }
 }
 
+
+// Check if user already has an approved application
+$has_approved_application = false;
+try {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM enrollment_applications WHERE user_id = ? AND status = 'approved'");
+    $stmt->execute([$user_id]);
+    if ($stmt->fetchColumn() > 0) {
+        $has_approved_application = true;
+    }
+} catch (Exception $e) {
+    // ignore
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'record_payment') {
     if (empty($_POST['csrf_token']) || !hash_equals($csrf_token, $_POST['csrf_token'])) {
         $error_msg = 'Invalid CSRF token for payment.';
@@ -222,6 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $student_email = trim($_POST['student_email'] ?? '');
 
             $student_religion = clean_text($_POST['student_religion'] ?? '');
+            $student_year_level = clean_text($_POST['student_year_level'] ?? '');
             $student_age_input = trim($_POST['student_age'] ?? '');
             $student_age = null;
             if ($student_age_input !== '') {
@@ -240,7 +254,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             $manual_amount_raw = trim((string)($_POST['amount'] ?? ''));
             $manual_amount = null;
-            if ($manual_amount_raw !== '') {
+            
+            if ($manual_amount_raw === '') {
+                $error_msg = 'Please enter a down payment amount.';
+            } else {
                 $manual_amount_norm = str_replace(',', '', $manual_amount_raw);
                 if (is_numeric($manual_amount_norm)) {
                     $manual_amount = round((float)$manual_amount_norm, 2);
@@ -291,6 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 'last_name' => $student_last,
                 'birth_date' => $student_birth ?: null,
                 'birthplace' => $student_birthplace ?: null,
+                'year_level' => $student_year_level ?: null,
                 'gender' => $student_gender ?: null,
                 'religion' => $student_religion ?: null,
                 'age' => $student_age !== null ? (int)$student_age : null,
@@ -311,127 +329,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 ],
             ];
 
-            $uploadedFiles = []; 
-            $userDir = $UPLOAD_BASE . '/user_' . (int)$user_id;
-            if (!is_dir($userDir)) {
-                @mkdir($userDir, 0755, true);
-            }
+            $uploadedFiles = [];
 
-            $process_single_file = function($fieldName, $label) use (&$uploadedFiles, $userDir, $MAX_FILE_SIZE, $ALLOWED_MIME, $user_id) {
-                if (empty($_FILES[$fieldName])) return;
-                $file = $_FILES[$fieldName];
-                if (!is_array($file) || !isset($file['error'])) return;
-
-                if ($file['error'] === UPLOAD_ERR_NO_FILE) return;
-                if ($file['error'] !== UPLOAD_ERR_OK) {
-                    throw new RuntimeException("Upload error for {$label}.");
-                }
-
-                $tmp = $file['tmp_name'];
-                $orig = basename($file['name'] ?? '');
-                $size = (int)($file['size'] ?? 0);
-
-                if ($size > $MAX_FILE_SIZE) {
-                    throw new RuntimeException("File {$orig} for {$label} exceeds the 5 MB limit.");
-                }
-
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $mime = finfo_file($finfo, $tmp);
-                finfo_close($finfo);
-                if (!in_array($mime, $ALLOWED_MIME, true)) {
-                    throw new RuntimeException("File {$orig} for {$label} has unsupported file type.");
-                }
-
-                $ext = pathinfo($orig, PATHINFO_EXTENSION);
-                $timestamp = time();
-                $stored = sprintf('%s_%s_%s.%s', $user_id, $timestamp, bin2hex(random_bytes(6)), $ext);
-                $dest = $userDir . '/' . $stored;
-
-                if (!move_uploaded_file($tmp, $dest)) {
-                    throw new RuntimeException("Failed to move uploaded file {$orig} for {$label}.");
-                }
-
-                @chmod($dest, 0644);
-
-                $uploadedFiles[] = [
-                    'original_name' => $orig,
-                    'stored_name' => 'uploads/enrollment_applications/user_' . (int)$user_id . '/' . $stored,
-                    'mime' => $mime,
-                    'size' => $size,
-                    'type' => $label,
-                ];
-            };
-
-            try {
-                $process_single_file('psa', 'PSA');
-                $process_single_file('report_card', 'Report Card');
-                $process_single_file('form_138', 'Form 138');
-                $process_single_file('good_moral', 'Good Moral');
-
-                if (!empty($_FILES['documents']) && is_array($_FILES['documents']['name'])) {
-                    for ($i = 0; $i < count($_FILES['documents']['name']); $i++) {
-                        $err = $_FILES['documents']['error'][$i];
-                        if ($err === UPLOAD_ERR_NO_FILE) continue;
-                        if ($err !== UPLOAD_ERR_OK) {
-                            $error_msg = 'One or more additional documents failed to upload.';
-                            break;
-                        }
-
-                        $tmp = $_FILES['documents']['tmp_name'][$i];
-                        $orig = basename($_FILES['documents']['name'][$i]);
-                        $size = (int)$_FILES['documents']['size'][$i];
-
-                        if ($size > $MAX_FILE_SIZE) {
-                            $error_msg = "File {$orig} exceeds the 5 MB limit.";
-                            break;
-                        }
-
-                        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                        $mime = finfo_file($finfo, $tmp);
-                        finfo_close($finfo);
-                        if (!in_array($mime, $ALLOWED_MIME, true)) {
-                            $error_msg = "File {$orig} has unsupported file type.";
-                            break;
-                        }
-
-                        $ext = pathinfo($orig, PATHINFO_EXTENSION);
-                        $timestamp = time();
-                        $stored = sprintf('%s_%s_%s.%s', $user_id, $timestamp, bin2hex(random_bytes(6)), $ext);
-                        $dest = $userDir . '/' . $stored;
-
-                        if (!move_uploaded_file($tmp, $dest)) {
-                            $error_msg = "Failed to move uploaded file {$orig}.";
-                            break;
-                        }
-
-                        $uploadedFiles[] = [
-                            'original_name' => $orig,
-                            'stored_name' => 'uploads/enrollment_applications/user_' . (int)$user_id . '/' . $stored,
-                            'mime' => $mime,
-                            'size' => $size,
-                            'type' => 'Additional',
-                        ];
-
-                        @chmod($dest, 0644);
-                    }
-                }
-            } catch (RuntimeException $fe) {
-                if ($error_msg === '') $error_msg = $fe->getMessage();
-            }
 
             // If no error so far, persist application and optionally create payment
             if ($error_msg === '') {
                 try {
                     $pdo->beginTransaction();
                     $sql = "INSERT INTO enrollment_applications
-                        (user_id, course_ids, notes, files, parent_info, student_info, status, submitted_at)
-                        VALUES (?, ?, ?, ?, ?, ?, 'submitted', NOW())";
+                        (user_id, course_ids, year_level, notes, files, parent_info, student_info, status, submitted_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'submitted', NOW())";
                     $stmt = $pdo->prepare($sql);
                     $course_json = json_encode(array_values($course_ids));
                     $files_json = json_encode($uploadedFiles);
                     $parent_json = json_encode($parent_info);
                     $student_json = json_encode($student_info);
-                    $stmt->execute([$user_id, $course_json, $notes, $files_json, $parent_json, $student_json]);
+                    $stmt->execute([$user_id, $course_json, $student_year_level, $notes, $files_json, $parent_json, $student_json]);
 
                     // get application id
                     $appId = (int)$pdo->lastInsertId();
@@ -491,23 +404,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         if (file_exists($p)) @unlink($p);
                     }
                     error_log('Enrollment application or payment insert error: ' . $e->getMessage());
-                    $error_msg = 'Failed to submit application. Please try again later.';
+                    $error_msg = 'Failed to submit application. Error: ' . $e->getMessage();
                 }
             }
         }
     }
-}
-
-// Check if user already has an approved application
-$has_approved_application = false;
-try {
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM enrollment_applications WHERE user_id = ? AND status = 'approved'");
-    $stmt->execute([$user_id]);
-    if ($stmt->fetchColumn() > 0) {
-        $has_approved_application = true;
-    }
-} catch (Exception $e) {
-    // ignore
 }
 
 // Fetch available courses
@@ -522,7 +423,7 @@ try {
 
 // Fetch user's previous applications (include parent_info and student_info)
 try {
-    $stmt = $pdo->prepare("SELECT id, course_ids, notes, files, parent_info, student_info, status, submitted_at, processed_at, processed_by FROM enrollment_applications WHERE user_id = ? ORDER BY submitted_at DESC");
+    $stmt = $pdo->prepare("SELECT id, course_ids, year_level, notes, files, parent_info, student_info, status, submitted_at, processed_at, processed_by FROM enrollment_applications WHERE user_id = ? ORDER BY submitted_at DESC");
     $stmt->execute([$user_id]);
     $applications = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
@@ -573,14 +474,16 @@ function h($v) {
           alert('Please provide student email address.');
           return false;
         }
-        // optional amount validation client-side
+        // amount validation client-side
         const amt = document.querySelector('input[name="amount"]').value.trim();
-        if (amt !== '') {
-          const normalized = amt.replace(/,/g, '');
-          if (isNaN(normalized) || Number(normalized) < 1000) {
-            alert('Please enter a valid amount of at least 1000 or leave it blank.');
+        if (amt === '') {
+            alert('Please enter a down payment amount.');
             return false;
-          }
+        }
+        const normalized = amt.replace(/,/g, '');
+        if (isNaN(normalized) || Number(normalized) < 1000) {
+            alert('Please enter a valid amount of at least 1000.');
+            return false;
         }
         return confirm('Submit enrollment application? You will be able to view status on this page.');
       }
@@ -612,6 +515,38 @@ function h($v) {
         const yes = document.querySelector('input[name="indigenous_belongs"][value="yes"]').checked;
         document.getElementById('indigenous_spec_div').style.display = yes ? 'block' : 'none';
       }
+
+      function updateYearLevelOptions() {
+        const selectedCourse = document.querySelector('input[name="course_id"]:checked');
+        const yearSelect = document.getElementById('student_year_level');
+        if (!selectedCourse || !yearSelect) return;
+
+        const courseCode = selectedCourse.getAttribute('data-code');
+        // Courses that only have up to 3rd Year
+        const restrictedCourses = ['ACT', 'DIT', 'DHRT'];
+        
+        // Reset all options first (show everything)
+        for (let i = 0; i < yearSelect.options.length; i++) {
+            yearSelect.options[i].style.display = '';
+            yearSelect.options[i].disabled = false;
+        }
+
+        if (restrictedCourses.includes(courseCode)) {
+            // Hide 4th Year
+            for (let i = 0; i < yearSelect.options.length; i++) {
+                if (yearSelect.options[i].value === '4th Year') {
+                    yearSelect.options[i].style.display = 'none';
+                    yearSelect.options[i].disabled = true;
+                    if (yearSelect.value === '4th Year') {
+                        yearSelect.value = ''; // Reset selection if it was 4th Year
+                    }
+                }
+            }
+        }
+      }
+
+      // Call on load to set initial state
+      window.addEventListener('DOMContentLoaded', updateYearLevelOptions);
     </script>
     <style>
     body::-webkit-scrollbar{
@@ -676,7 +611,7 @@ function h($v) {
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-auto border rounded p-2">
                     <?php foreach ($courses as $c): ?>
                     <label class="inline-flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
-                        <input type="radio" name="course_id" value="<?= (int)$c['id'] ?>" class="h-4 w-4 text-sky-600 border-gray-300 rounded"
+                        <input type="radio" name="course_id" value="<?= (int)$c['id'] ?>" data-code="<?= h($c['course_code']) ?>" onclick="updateYearLevelOptions()" class="h-4 w-4 text-sky-600 border-gray-300 rounded"
                         <?= ((int)($_POST['course_id'] ?? 0) === (int)$c['id']) ? 'checked' : '' ?> aria-label="<?= h($c['course_code'] . ' - ' . $c['course_name']) ?>">
                         <span class="text-sm">
                         <strong><?= h($c['course_code']) ?></strong> — <?= h($c['course_name']) ?> <span class="text-xs text-gray-500">(<?= (int)$c['credits'] ?> cr)</span>
@@ -686,6 +621,18 @@ function h($v) {
                 </div>
                 <p class="text-xs text-gray-500 mt-1">You may apply for only one course per application. To apply for additional courses submit separate applications.</p>
             </div>
+
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Year Level</label>
+                <select name="student_year_level" id="student_year_level" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" required>
+                    <option value="" hidden>Select Year Level</option>
+                    <option value="1st Year" <?= (($_POST['student_year_level'] ?? '') === '1st Year') ? 'selected' : '' ?>>1st Year</option>
+                    <option value="2nd Year" <?= (($_POST['student_year_level'] ?? '') === '2nd Year') ? 'selected' : '' ?>>2nd Year</option>
+                    <option value="3rd Year" <?= (($_POST['student_year_level'] ?? '') === '3rd Year') ? 'selected' : '' ?>>3rd Year</option>
+                    <option value="4th Year" <?= (($_POST['student_year_level'] ?? '') === '4th Year') ? 'selected' : '' ?>>4th Year</option>
+                </select>
+            </div>
+
         </div>
 
         <!-- Card 2: Student Information -->
@@ -716,6 +663,8 @@ function h($v) {
                     <label class="block text-sm font-medium text-gray-700">Age</label>
                     <input type="number" min="0" name="student_age" value="<?= h($_POST['student_age'] ?? '') ?>" class="mt-1 block w-full rounded border-gray-300 px-3 py-2 text-sm" placeholder="Age (years)" />
                 </div>
+
+
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Gender</label>
@@ -821,33 +770,8 @@ function h($v) {
             </div>
         </div>
 
-        <!-- Card 5: Requirements -->
-        <div class="bg-white shadow rounded-lg p-6 mb-6">
-            <h2 class="text-lg font-medium text-gray-900 mb-4">Requirements</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">PSA Birth Certificate</label>
-                    <input type="file" name="psa" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Report Card (Form 138)</label>
-                    <input type="file" name="report_card" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Form 138</label>
-                    <input type="file" name="form_138" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Certificate of Good Moral Character</label>
-                    <input type="file" name="good_moral" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
-                </div>
-                <div class="md:col-span-2">
-                    <label class="block text-sm font-medium text-gray-700">Additional Documents</label>
-                    <input type="file" name="documents[]" multiple class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
-                    <p class="text-xs text-gray-500 mt-1">You can select multiple files.</p>
-                </div>
-            </div>
-        </div>
+        <!-- Card 5: Requirements (Removed) -->
+
 
         <!-- Card 6: Payment -->
         <div class="bg-white shadow rounded-lg p-6 mb-6">
@@ -863,8 +787,9 @@ function h($v) {
                     value="<?= isset($_POST['amount']) ? h($_POST['amount']) : '' ?>"
                     class="block w-full text-gray-700 placeholder-gray-400 border-0 focus:outline-none focus:ring-0 text-sm"
                     aria-label="Amount"
+                    required
                     />
-                    <p class="mt-2 text-xs text-gray-400">Enter the amount for down payment ₱1000. Admin will verify and mark completed.</p>
+                    <p class="mt-2 text-xs text-gray-400">Enter the amount for down payment (minimum ₱1000). Admin will verify and mark completed.</p>
                 </div>
             </div>
         </div>
@@ -910,7 +835,13 @@ function h($v) {
                 <div><strong>Student:</strong>
                   <?php if (!empty($student_info) && is_array($student_info)): ?>
                     <?= h($student_info['first_name'] ?? ''); ?> <?= h($student_info['middle_name'] ?? '') ?> <?= h($student_info['last_name'] ?? ''); ?> — <?= h($student_info['email'] ?? '') ?>
-                    <div class="text-xs text-gray-500">DOB: <?= h($student_info['birth_date'] ?? '—') ?> · Birthplace: <?= h($student_info['birthplace'] ?? '—') ?> · Gender: <?= h($student_info['gender'] ?? '—') ?> · Age: <?= h($student_info['age'] ?? '—') ?></div>
+                    <div class="text-xs text-gray-500">
+                        DOB: <?= h($student_info['birth_date'] ?? '—') ?> · 
+                        Birthplace: <?= h($student_info['birthplace'] ?? '—') ?> · 
+                        Gender: <?= h($student_info['gender'] ?? '—') ?> · 
+                        Age: <?= h($student_info['age'] ?? '—') ?> · 
+                        Year Level: <?= h($student_info['year_level'] ?? '—') ?>
+                    </div>
                     <?php
                       $a = $student_info['address'] ?? null;
                       if (!empty($a) && is_array($a)):
@@ -939,6 +870,8 @@ function h($v) {
                     <?= implode(', ', $labels) ?>
                   <?php endif; ?>
                 </div>
+
+                <div class="mt-2"><strong>Year Level:</strong> <?= h($app['year_level'] ?? $student_info['year_level'] ?? '—') ?></div>
 
                 <?php if (!empty($app['notes'])): ?>
                   <div class="mt-2"><strong>Notes:</strong> <?= h($app['notes']) ?></div>
